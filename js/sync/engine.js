@@ -27,7 +27,7 @@ export const MESSAGES = {
   expired: 'Tu sesión caducó por inactividad. Inicia sesión de nuevo; tus datos siguen en este dispositivo.',
 };
 
-export function createEngine({ store, storage, auth, firestore, now = Date.now, autoStart = true }) {
+export function createEngine({ store, storage, auth, firestore, now = Date.now, autoStart = true, onNewAccount = null }) {
   let meta = null;              // { userId, email, cursor, lastActivity } (la sesión vive en `mgr`)
   let status = 'off';
   let message = '';
@@ -36,6 +36,7 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
   let again = false;
   let failures = 0;
   let pendingSession = null;    // sesión validada a la espera de decidir qué hacer con datos de otra cuenta
+  let pendingIsNew = false;     // ¿esa sesión pendiente es de una cuenta recién creada?
   let lastChange = now();
   let started = false;
   let timer = null;
@@ -109,10 +110,11 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     if (owner && newOwner && store.countLive() > 0) {
       // AC7.10: datos locales de otra cuenta → hay que preguntar antes de subir nada.
       pendingSession = s;
+      pendingIsNew = kind === 'signUp';
       return { decision: 'other-account', localCount: store.countLive() };
     }
     if (owner && newOwner) store.clearAllLocal();
-    await activate(s, newOwner);
+    await activate(s, newOwner, kind === 'signUp');
     return { decision: null };
   }
 
@@ -122,21 +124,27 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
   async function resolveOtherAccount(choice) {
     const s = pendingSession;
     if (!s) throw new SyncError('validation', 'No hay nada pendiente de decidir.');
+    const isNew = pendingIsNew;
     pendingSession = null;
+    pendingIsNew = false;
     if (choice === 'discard') store.clearAllLocal();
     else store.dropTombstones(); // 'merge': los datos locales pasan a la cuenta nueva
-    await activate(s, true);
+    await activate(s, true, isNew);
   }
 
   const cancelOtherAccount = () => { pendingSession = null; };
 
-  async function activate(s, newOwner) {
+  async function activate(s, newOwner, isNewAccount = false) {
     meta = {
       userId: s.userId, email: s.email,
       cursor: newOwner ? null : (meta ? meta.cursor : null),
       lastActivity: now(),
     };
     mgr.set(s);
+    // Cuenta recién creada: recibe la lista inicial (spec 003, AC13.9), antes de subir todo.
+    if (isNewAccount && onNewAccount) {
+      try { onNewAccount(); } catch (e) { console.error(e); }
+    }
     if (newOwner) store.markAllDirty(); // primer inicio de sesión de esta cuenta: se sube todo (AC7.1, AC7.3)
     store.setTrackDeletes(true);
     await saveMeta();

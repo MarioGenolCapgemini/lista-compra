@@ -13,7 +13,7 @@ import { mountList } from './views/list.js';
 import { mountAccount } from './views/account.js';
 import { mountSettings } from './views/settings.js';
 import { createSettings } from './settings.js';
-import { seedIfFirstRun } from './seed.js';
+import { seedIfFirstRun, seedForNewAccount } from './seed.js';
 import { t, getLang } from './i18n/index.js';
 
 // Tema e idioma (spec 003): se aplican antes de abrir la base de datos para no pintar nada «equivocado».
@@ -45,6 +45,7 @@ async function start() {
       store, storage,
       auth: createAuth({ apiKey: FIREBASE_API_KEY }),
       firestore: createFirestore({ projectId: FIREBASE_PROJECT_ID }),
+      onNewAccount: () => seedForNewAccount(store, getLang()), // AC13.9
     });
     await sync.init();
     if (sync.getState().signedIn) sync.start();

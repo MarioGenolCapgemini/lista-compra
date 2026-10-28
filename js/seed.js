@@ -28,6 +28,11 @@ export function buildSeed(lang) {
   };
 }
 
+/** Añade la lista inicial a una cuenta recién creada (AC13.9). Idempotente: no duplica ni resucita. */
+export function seedForNewAccount(store, lang) {
+  return store.seedDefault(buildSeed(lang));
+}
+
 /**
  * Crea la lista inicial si es el primer arranque. Devuelve true si la creó.
  * Orden de escritura: primero los registros, DESPUÉS la bandera. Si la app se cierra entre
