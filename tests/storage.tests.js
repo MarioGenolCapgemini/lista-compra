@@ -165,6 +165,24 @@ export function register(t, { idb = globalThis.indexedDB } = {}) {
     await s.destroy();
   });
 
+  t.test('T201: banderas persistentes en meta, independientes del estado de sincronización', async () => {
+    const s = await fresh(idb);
+    assert.equal(await s.getFlag('seeded'), null, 'sin bandera → null');
+    await s.setFlag('seeded', { at: 5, created: true });
+    assert.deepEqual(await s.getFlag('seeded'), { at: 5, created: true });
+    await s.setMeta({ userId: 'u1' });
+    await s.deleteMeta();
+    assert.ok(await s.getFlag('seeded'), 'deleteMeta no borra las banderas');
+    await s.clearAll();
+    assert.ok(await s.getFlag('seeded'), 'clearAll no borra las banderas');
+    s.close();
+    const again = createStorage(DB, idb);
+    await again.open();
+    assert.ok(await again.getFlag('seeded'), 'sobrevive a cerrar y reabrir');
+    assert.equal(await again.getMeta(), null, 'getMeta no confunde banderas con el estado de sincronización');
+    await again.destroy();
+  });
+
   t.test('open falla de forma controlada si no hay IndexedDB', async () => {
     const s = createStorage(DB, null);
     let failed = false;

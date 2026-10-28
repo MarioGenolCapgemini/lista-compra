@@ -11,8 +11,29 @@ import { FIREBASE_API_KEY, FIREBASE_PROJECT_ID } from './config.js';
 import { mountHome } from './views/home.js';
 import { mountList } from './views/list.js';
 import { mountAccount } from './views/account.js';
+import { mountSettings } from './views/settings.js';
+import { createSettings } from './settings.js';
+import { seedIfFirstRun } from './seed.js';
+import { t, getLang } from './i18n/index.js';
+
+// Tema e idioma (spec 003): se aplican antes de abrir la base de datos para no pintar nada «equivocado».
+function createDeviceSettings() {
+  let ls = null;
+  try { ls = globalThis.localStorage || null; } catch (_) { ls = null; } // puede lanzar si está bloqueado
+  const mq = globalThis.matchMedia ? globalThis.matchMedia('(prefers-color-scheme: dark)') : null;
+  const settings = createSettings({
+    storage: ls,
+    getSystemDark: () => !!(mq && mq.matches),
+    languages: (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]),
+    doc: document,
+  });
+  settings.apply();
+  if (mq && mq.addEventListener) mq.addEventListener('change', () => settings.refreshSystem());
+  return settings;
+}
 
 async function start() {
+  const settings = createDeviceSettings();
   const store = createStore();
   const storage = createStorage();
   await store.init(storage);
@@ -29,6 +50,11 @@ async function start() {
     if (sync.getState().signedIn) sync.start();
   }
 
+  // Lista inicial con productos cotidianos: solo en el primer arranque sin datos (spec 003, US13).
+  await seedIfFirstRun({
+    store, storage, lang: getLang(), signedIn: !!(sync && sync.getState().signedIn),
+  });
+
   const app = document.getElementById('app');
   const banner = document.getElementById('banner');
 
@@ -36,9 +62,7 @@ async function start() {
   function updateBanner() {
     const bad = !store.isPersistent() || store.hasSaveError();
     banner.hidden = !bad;
-    banner.textContent = bad
-      ? 'Los cambios no se pueden guardar en este dispositivo y se perderán al cerrar la app.'
-      : '';
+    banner.textContent = bad ? t('banner.nosave') : '';
   }
   store.subscribe(updateBanner);
   updateBanner();
@@ -53,7 +77,9 @@ async function start() {
   });
 
   let unmount = null;
+  let currentRoute = null;
   function show(route) {
+    currentRoute = route;
     if (route.name === 'list' && !store.getList(route.id)) {
       location.replace('#/'); // lista inexistente → inicio
       return;
@@ -65,10 +91,23 @@ async function start() {
     if (unmount) unmount();
     app.innerHTML = '';
     window.scrollTo(0, 0);
+    app.classList.remove('view');
+    void app.offsetWidth; // reinicia la animación de entrada (AC11.3)
+    app.classList.add('view');
     if (route.name === 'list') unmount = mountList(app, { store, listId: route.id });
     else if (route.name === 'account') unmount = mountAccount(app, { sync });
+    else if (route.name === 'settings') unmount = mountSettings(app, { settings, sync });
     else unmount = mountHome(app, { store, sync });
   }
+
+  // Al cambiar de idioma se repinta la pantalla actual y el aviso (AC14.1). El tema no necesita repintar.
+  let shownLang = getLang();
+  settings.subscribe(() => {
+    if (getLang() === shownLang) return;
+    shownLang = getLang();
+    updateBanner();
+    if (currentRoute) show(currentRoute);
+  });
 
   createRouter(show).start();
 }

@@ -11,6 +11,7 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
   function open() {
     return new Promise((resolve, reject) => {
       if (!idb) { reject(new Error('IndexedDB no está disponible')); return; }
+      if (db) { resolve(); return; } // ya abierta: no se duplica la conexión (una conexión huérfana bloquearía los borrados)
       let request;
       try { request = idb.open(dbName, DB_VERSION); } catch (e) { reject(e); return; }
       request.onupgradeneeded = () => {
@@ -27,9 +28,10 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
         }
       };
       request.onsuccess = () => {
-        db = request.result;
-        // Si otra pestaña pide actualizar el esquema, liberamos la conexión.
-        db.onversionchange = () => { db.close(); db = null; };
+        const conn = request.result;
+        db = conn;
+        // Si otra pestaña pide actualizar o borrar el esquema, liberamos ESTA conexión.
+        conn.onversionchange = () => { conn.close(); if (db === conn) db = null; };
         resolve();
       };
       request.onerror = () => reject(request.error);
@@ -118,6 +120,21 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
 
   const deleteMeta = () => tx('meta', 'readwrite', (t) => { t.objectStore('meta').delete(META_KEY); });
 
+  // ---- Banderas (spec 003: p. ej. «la lista inicial ya se creó») ----
+  // Viven en `meta` con la clave `flag:<nombre>`; no tocan el estado de sincronización.
+
+  function getFlag(name) {
+    const out = { value: null };
+    return tx('meta', 'readonly', (t) => {
+      t.objectStore('meta').get('flag:' + name).onsuccess = (e) => { out.value = e.target.result || null; };
+      return out;
+    }).then((o) => (o.value ? o.value.value ?? true : null));
+  }
+
+  const setFlag = (name, value = true) => tx('meta', 'readwrite', (t) => {
+    t.objectStore('meta').put({ key: 'flag:' + name, value });
+  });
+
   async function requestPersistence() {
     try {
       if (globalThis.navigator && navigator.storage && navigator.storage.persist) {
@@ -145,7 +162,7 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
     open, close, destroy, loadAll,
     putList, putItem, deleteItem, deleteItems, deleteListCascade,
     putRecords, deleteRecords, clearAll,
-    getMeta, setMeta, deleteMeta,
+    getMeta, setMeta, deleteMeta, getFlag, setFlag,
     requestPersistence,
   };
 }

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><title>Pruebas: idiomas, ajustes y lista inicial</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="font-family:system-ui;padding:16px">
+  <h1 style="font-size:1.1rem">Pruebas de idiomas, ajustes y lista inicial (spec 003)</h1>
+  <div id="out">Ejecutando…</div>
+  <script type="module">
+    import { createRunner, renderResults } from './runner.js';
+    import { register as i18n } from './i18n.tests.js';
+    import { register as settings } from './settings.tests.js';
+    import { register as seed } from './seed.tests.js';
+    const t = createRunner();
+    i18n(t); settings(t); seed(t);
+    renderResults(await t.run(), document.getElementById('out'));
+  </script>
+</body>
+</html>

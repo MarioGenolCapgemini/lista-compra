@@ -339,6 +339,35 @@ export function createStore({ clock = Date.now } = {}) {
     return n;
   }
 
+  // ---- Lista inicial (spec 003) ----
+
+  /** ¿Hay algún registro, aunque sea una lápida? (AC13.4) */
+  const hasAnyRecord = () => lists.length > 0 || items.length > 0;
+
+  /**
+   * Inserta la lista inicial y sus productos de una vez, con una sola notificación.
+   * Los registros llevan `id`, `createdAt` y `updatedAt` fijos (los pone `seed.js`).
+   * Si ya existe algún registro con ese id no se toca (idempotente). Devuelve cuántos añadió.
+   */
+  function seedDefault({ list, items: seedItems = [] } = {}) {
+    if (!list) return 0;
+    const newLists = [];
+    const newItems = [];
+    if (!lists.some((l) => l.id === list.id)) newLists.push(normList({ ...list, dirty: 1 }));
+    for (const i of seedItems) {
+      if (!items.some((x) => x.id === i.id)) newItems.push(normItem({ ...i, listId: list.id, dirty: 1 }));
+    }
+    if (!newLists.length && !newItems.length) return 0;
+    lists.push(...newLists);
+    items.push(...newItems);
+    lists.sort((a, b) => a.createdAt - b.createdAt);
+    const ls = newLists.map(copy);
+    const is = newItems.map(copy);
+    persist((st) => st.putRecords(ls, is));
+    notify();
+    return ls.length + is.length;
+  }
+
   /** Borra todo el contenido local (lista de datos de este dispositivo). */
   function clearAllLocal() {
     lists = [];
@@ -379,6 +408,8 @@ export function createStore({ clock = Date.now } = {}) {
     // sincronización
     setTrackDeletes, isTrackingDeletes, hasDirty, countDirty, countLive,
     getDirty, markClean, markAllDirty, applyRemote, clearAllLocal, purgeTombstones, dropTombstones,
+    // lista inicial
+    seedDefault, hasAnyRecord,
     isPersistent: () => persistent,
     hasSaveError: () => saveError,
     flush: () => queue, // para pruebas

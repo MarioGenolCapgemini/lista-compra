@@ -2,7 +2,7 @@
 // IMPORTANTE: al cambiar cualquier archivo de la app, sube CACHE_VERSION
 // para que los usuarios reciban la nueva versión.
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v6';
 const CACHE = 'lista-compra-' + CACHE_VERSION;
 
 const ASSETS = [
@@ -16,6 +16,12 @@ const ASSETS = [
   './js/router.js',
   './js/util.js',
   './js/config.js',
+  './js/theme-init.js',
+  './js/settings.js',
+  './js/seed.js',
+  './js/i18n/index.js',
+  './js/i18n/es.js',
+  './js/i18n/en.js',
   './js/sync/errors.js',
   './js/sync/auth.js',
   './js/sync/firestore.js',
@@ -24,6 +30,7 @@ const ASSETS = [
   './js/views/list.js',
   './js/views/dialogs.js',
   './js/views/account.js',
+  './js/views/settings.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

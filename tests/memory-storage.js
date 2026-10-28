@@ -6,6 +6,7 @@ export function createMemoryStorage({ lists = [], items = [], meta = null, failO
   const L = new Map(lists.map((l) => [l.id, clone(l)]));
   const I = new Map(items.map((i) => [i.id, clone(i)]));
   let M = clone(meta);
+  const F = new Map();
 
   return {
     async open() { if (failOpen) throw new Error('no se puede abrir'); },
@@ -31,8 +32,11 @@ export function createMemoryStorage({ lists = [], items = [], meta = null, failO
     async getMeta() { return clone(M); },
     async setMeta(m) { M = clone({ ...m, key: 'sync' }); },
     async deleteMeta() { M = null; },
+    async getFlag(name) { return F.has(name) ? clone(F.get(name)) : null; },
+    async setFlag(name, value = true) { F.set(name, clone(value)); },
     async requestPersistence() { return true; },
     // Ayudas de inspección para las pruebas
+    flags: () => Object.fromEntries(F),
     snapshot: () => ({ lists: [...L.values()].map(clone), items: [...I.values()].map(clone), meta: clone(M) }),
   };
 }

@@ -3,16 +3,8 @@
 
 import { escapeHtml, icon } from '../util.js';
 import { choiceDialog, passwordDialog } from './dialogs.js';
-
-export const STATUS_TEXT = {
-  off: 'Sin sesión',
-  idle: 'Sincronizado',
-  syncing: 'Sincronizando…',
-  offline: 'Sin conexión: cambios pendientes',
-  error: 'Error de sincronización',
-};
-
-const fmtTime = (ms) => new Date(ms).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+import { t, formatTime, translateMessage } from '../i18n/index.js';
+import { MIN_PASSWORD } from '../sync/auth.js';
 
 export function mountAccount(root, { sync }) {
   const ac = new AbortController();
@@ -24,8 +16,8 @@ export function mountAccount(root, { sync }) {
 
   root.innerHTML =
     '<header class="topbar">' +
-    `<a class="icon-btn" href="#/" aria-label="Volver a mis listas">${icon('back')}</a>` +
-    '<h1>Cuenta y sincronización</h1>' +
+    `<a class="icon-btn" href="#/" aria-label="${escapeHtml(t('common.back'))}">${icon('back')}</a>` +
+    `<h1>${escapeHtml(t('account.title'))}</h1>` +
     '</header>' +
     '<main class="content" id="account-body"></main>';
   const body = root.querySelector('#account-body');
@@ -34,49 +26,48 @@ export function mountAccount(root, { sync }) {
   function signedOutHtml(state) {
     const isUp = mode === 'signUp';
     return (
-      (state.message && state.status === 'off' ? `<p class="notice" role="status">${escapeHtml(state.message)}</p>` : '') +
-      '<p class="lead">Sincroniza tus listas entre tus dispositivos y no las pierdas si cambias de móvil. ' +
-      'Es opcional: sin cuenta la app funciona igual y tus datos no salen de este dispositivo.</p>' +
+      (state.message && state.status === 'off' ? `<p class="notice" role="status">${escapeHtml(translateMessage(state.message))}</p>` : '') +
+      `<p class="lead">${escapeHtml(t('account.lead'))}</p>` +
       '<div class="tabs" role="tablist">' +
-      `<button type="button" role="tab" class="tab" data-mode="signUp" aria-selected="${isUp}">Crear cuenta</button>` +
-      `<button type="button" role="tab" class="tab" data-mode="signIn" aria-selected="${!isUp}">Iniciar sesión</button>` +
+      `<button type="button" role="tab" class="tab" data-mode="signUp" aria-selected="${isUp}">${escapeHtml(t('account.tab.signUp'))}</button>` +
+      `<button type="button" role="tab" class="tab" data-mode="signIn" aria-selected="${!isUp}">${escapeHtml(t('account.tab.signIn'))}</button>` +
       '</div>' +
       '<form id="auth-form" class="form" novalidate>' +
-      '<label class="field"><span>Correo electrónico</span>' +
+      `<label class="field"><span>${escapeHtml(t('account.email'))}</span>` +
       '<input name="email" type="email" inputmode="email" autocomplete="email" required autocapitalize="off" spellcheck="false"></label>' +
-      '<label class="field"><span>Contraseña (mínimo 8 caracteres)</span>' +
-      '<span class="pw"><input name="password" type="password" required minlength="8" ' +
+      `<label class="field"><span>${escapeHtml(t('account.password', { n: MIN_PASSWORD }))}</span>` +
+      `<span class="pw"><input name="password" type="password" required minlength="${MIN_PASSWORD}" ` +
       `autocomplete="${isUp ? 'new-password' : 'current-password'}">` +
-      '<button type="button" class="btn btn-ghost btn-small" data-action="toggle-pw" aria-pressed="false">Mostrar</button></span></label>' +
-      (isUp ? '<p class="hint">Escribe bien tu correo: lo necesitas para recuperar la contraseña. Tus listas actuales se subirán a la cuenta.</p>' : '') +
+      `<button type="button" class="btn btn-ghost btn-small" data-action="toggle-pw" aria-pressed="false">${escapeHtml(t('account.show'))}</button></span></label>` +
+      (isUp ? `<p class="hint">${escapeHtml(t('account.hintSignUp'))}</p>` : '') +
       '<p class="form-error" id="auth-error" role="alert" hidden></p>' +
-      `<button type="submit" class="btn btn-primary btn-block" id="auth-submit">${isUp ? 'Crear cuenta' : 'Iniciar sesión'}</button>` +
-      (isUp ? '' : '<button type="button" class="btn btn-link" data-action="forgot">He olvidado mi contraseña</button>') +
+      `<button type="submit" class="btn btn-primary btn-block" id="auth-submit">${escapeHtml(t(isUp ? 'account.submit.signUp' : 'account.submit.signIn'))}</button>` +
+      (isUp ? '' : `<button type="button" class="btn btn-link" data-action="forgot">${escapeHtml(t('account.forgot'))}</button>`) +
       '</form>'
     );
   }
 
   function statusHtml(state) {
-    const when = state.lastSync ? `Última sincronización: ${fmtTime(state.lastSync)}` : 'Aún no se ha sincronizado en esta sesión';
-    const pend = state.pending > 0 ? `${state.pending} cambio${state.pending === 1 ? '' : 's'} pendiente${state.pending === 1 ? '' : 's'} de enviar` : 'Todo enviado';
+    const when = state.lastSync ? t('account.lastSync', { time: formatTime(state.lastSync) }) : t('account.neverSynced');
+    const pend = state.pending > 0 ? t('account.pending', { n: state.pending }) : t('account.pending.none');
     return (
       `<p class="status status--${escapeHtml(state.status)}"><span class="dot dot--${escapeHtml(state.status)}" aria-hidden="true"></span>` +
-      `<strong>${escapeHtml(STATUS_TEXT[state.status] || state.status)}</strong></p>` +
-      (state.message ? `<p class="notice" role="status">${escapeHtml(state.message)}</p>` : '') +
+      `<strong>${escapeHtml(t('sync.status.' + state.status))}</strong></p>` +
+      (state.message ? `<p class="notice" role="status">${escapeHtml(translateMessage(state.message))}</p>` : '') +
       `<p class="hint">${escapeHtml(pend)} · ${escapeHtml(when)}</p>`
     );
   }
 
   function signedInHtml(state) {
     return (
-      `<p class="lead">Sesión iniciada como <strong>${escapeHtml(state.email || '')}</strong>.</p>` +
+      `<p class="lead">${escapeHtml(t('account.signedInPre'))}<strong>${escapeHtml(state.email || '')}</strong>${escapeHtml(t('account.signedInPost'))}</p>` +
       '<div id="sync-status"></div>' +
       '<p class="form-error" id="action-error" role="alert" hidden></p>' +
-      `<button type="button" class="btn btn-primary btn-block" data-action="sync-now">${icon('refresh')}<span>Sincronizar ahora</span></button>` +
-      '<button type="button" class="btn btn-ghost btn-block" data-action="sign-out">Cerrar sesión</button>' +
+      `<button type="button" class="btn btn-primary btn-block" data-action="sync-now">${icon('refresh')}<span>${escapeHtml(t('account.syncNow'))}</span></button>` +
+      `<button type="button" class="btn btn-ghost btn-block" data-action="sign-out">${escapeHtml(t('account.signOut'))}</button>` +
       '<hr class="sep">' +
-      '<p class="hint">Eliminar la cuenta borra tu correo y todas tus listas de la nube. No se puede deshacer.</p>' +
-      '<button type="button" class="btn btn-danger btn-block" data-action="delete-account">Eliminar cuenta</button>'
+      `<p class="hint">${escapeHtml(t('account.deleteHint'))}</p>` +
+      `<button type="button" class="btn btn-danger btn-block" data-action="delete-account">${escapeHtml(t('account.deleteBtn'))}</button>`
     );
   }
 
@@ -97,7 +88,7 @@ export function mountAccount(root, { sync }) {
     el.hidden = !text;
   }
 
-  const friendly = (e) => (e && e.kind ? e.message : 'No se pudo completar la acción. Inténtalo de nuevo.');
+  const friendly = (e) => (e && e.kind ? translateMessage(e.message) : t('err.generic'));
 
   function setBusy(v) {
     busy = v;
@@ -113,15 +104,14 @@ export function mountAccount(root, { sync }) {
       const r = await sync[mode](f.email.value, f.password.value);
       if (r.decision === 'other-account') {
         const choice = await choiceDialog({
-          title: 'Datos de otra cuenta en este dispositivo',
-          message: `Este dispositivo tiene ${r.localCount} elemento${r.localCount === 1 ? '' : 's'} de otra cuenta. ` +
-            '¿Qué hacemos con ellos? No se subirá nada hasta que elijas.',
+          title: t('account.other.title'),
+          message: t('account.other.msg', { n: r.localCount }),
           choices: [
-            { value: 'discard', label: 'Descartarlos y usar solo esta cuenta' },
-            { value: 'merge', label: 'Añadirlos a esta cuenta' },
+            { value: 'discard', label: t('account.other.discard') },
+            { value: 'merge', label: t('account.other.merge') },
           ],
         });
-        if (!choice) { sync.cancelOtherAccount(); showError('No se ha iniciado sesión.'); return; }
+        if (!choice) { sync.cancelOtherAccount(); showError(t('account.notSignedIn')); return; }
         await sync.resolveOtherAccount(choice);
       }
     } catch (e) {
@@ -139,8 +129,7 @@ export function mountAccount(root, { sync }) {
     try {
       await sync.sendPasswordReset(email);
       body.querySelector('#auth-error').hidden = false;
-      body.querySelector('#auth-error').textContent =
-        'Si existe una cuenta con ese correo, recibirás un enlace para elegir una nueva contraseña.';
+      body.querySelector('#auth-error').textContent = t('account.resetSent');
     } catch (e) {
       showError(friendly(e));
     } finally {
@@ -150,11 +139,11 @@ export function mountAccount(root, { sync }) {
 
   async function signOut() {
     const choice = await choiceDialog({
-      title: 'Cerrar sesión',
-      message: 'Tus listas seguirán guardadas en tu cuenta. ¿Qué hacemos con la copia de este dispositivo?',
+      title: t('account.signOut.title'),
+      message: t('account.signOut.msg'),
       choices: [
-        { value: 'keep', label: 'Conservarla en este dispositivo' },
-        { value: 'remove', label: 'Eliminarla de este dispositivo', danger: true },
+        { value: 'keep', label: t('account.signOut.keep') },
+        { value: 'remove', label: t('account.signOut.remove'), danger: true },
       ],
     });
     if (!choice) return;
@@ -164,19 +153,18 @@ export function mountAccount(root, { sync }) {
 
   async function deleteAccount() {
     const choice = await choiceDialog({
-      title: 'Eliminar cuenta',
-      message: 'Se eliminarán tu correo y todas tus listas de la nube. No se puede deshacer. ' +
-        '¿Qué hacemos con la copia de este dispositivo?',
+      title: t('account.delete.title'),
+      message: t('account.delete.msg'),
       choices: [
-        { value: 'keep', label: 'Eliminar la cuenta y conservar la copia local', danger: true },
-        { value: 'remove', label: 'Eliminar la cuenta y borrar también este dispositivo', danger: true },
+        { value: 'keep', label: t('account.delete.keep'), danger: true },
+        { value: 'remove', label: t('account.delete.remove'), danger: true },
       ],
     });
     if (!choice) return;
     const password = await passwordDialog({
-      title: 'Confirma tu contraseña',
-      message: 'Escribe tu contraseña para eliminar la cuenta definitivamente.',
-      confirmText: 'Eliminar cuenta',
+      title: t('account.deletePw.title'),
+      message: t('account.deletePw.msg'),
+      confirmText: t('account.deletePw.confirm'),
       danger: true,
     });
     if (password === null) return;
@@ -204,7 +192,7 @@ export function mountAccount(root, { sync }) {
       const input = body.querySelector('input[name="password"]');
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
-      btn.textContent = show ? 'Ocultar' : 'Mostrar';
+      btn.textContent = t(show ? 'account.hide' : 'account.show');
       btn.setAttribute('aria-pressed', String(show));
     } else if (a === 'forgot') forgot();
     else if (a === 'sync-now') sync.syncNow();
@@ -220,7 +208,7 @@ export function mountAccount(root, { sync }) {
 
   const unsubscribe = sync.subscribe(render);
   render();
-  document.title = 'Cuenta · Lista de la compra';
+  document.title = t('account.docTitle');
 
   return () => { ac.abort(); unsubscribe(); };
 }

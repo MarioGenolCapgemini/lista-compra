@@ -2,6 +2,7 @@
 // Cada función devuelve una promesa: datos si se acepta, null si se cancela.
 
 import { escapeHtml, MAX_NOTE } from '../util.js';
+import { t } from '../i18n/index.js';
 
 let seq = 0;
 
@@ -16,7 +17,7 @@ function openDialog(title, bodyHtml, okText, { danger = false } = {}) {
       `<h2 id="${id}">${escapeHtml(title)}</h2>` +
       bodyHtml +
       '<div class="dlg-actions">' +
-      '<button type="submit" value="cancel" formnovalidate class="btn btn-ghost">Cancelar</button>' +
+      `<button type="submit" value="cancel" formnovalidate class="btn btn-ghost">${escapeHtml(t('common.cancel'))}</button>` +
       `<button type="submit" value="ok" class="btn ${danger ? 'btn-danger' : 'btn-primary'}">${escapeHtml(okText)}</button>` +
       '</div></form>';
     document.body.appendChild(d);
@@ -33,7 +34,7 @@ function openDialog(title, bodyHtml, okText, { danger = false } = {}) {
 }
 
 /** Pide un texto obligatorio (nombre de lista). Devuelve string o null. */
-export async function promptDialog({ title, label, value = '', submitText = 'Guardar' }) {
+export async function promptDialog({ title, label, value = '', submitText = t('common.save') }) {
   const r = await openDialog(
     title,
     `<label class="field"><span>${escapeHtml(label)}</span>` +
@@ -44,7 +45,7 @@ export async function promptDialog({ title, label, value = '', submitText = 'Gua
 }
 
 /** Confirmación. Devuelve true/false. */
-export async function confirmDialog({ title, message, confirmText = 'Aceptar', danger = false }) {
+export async function confirmDialog({ title, message, confirmText = t('common.accept'), danger = false }) {
   const r = await openDialog(title, `<p class="dlg-msg">${escapeHtml(message)}</p>`, confirmText, { danger });
   return r !== null;
 }
@@ -53,7 +54,7 @@ export async function confirmDialog({ title, message, confirmText = 'Aceptar', d
  * Diálogo con varias acciones. Devuelve el `value` de la elegida, o null si se cancela.
  * `choices`: [{ value, label, danger? }]
  */
-export function choiceDialog({ title, message, choices, cancelText = 'Cancelar' }) {
+export function choiceDialog({ title, message, choices, cancelText = t('common.cancel') }) {
   return new Promise((resolve) => {
     const id = 'dlg-title-' + (++seq);
     const d = document.createElement('dialog');
@@ -79,11 +80,11 @@ export function choiceDialog({ title, message, choices, cancelText = 'Cancelar' 
 }
 
 /** Pide la contraseña para confirmar una acción. Devuelve string o null. */
-export async function passwordDialog({ title, message, confirmText = 'Confirmar', danger = false }) {
+export async function passwordDialog({ title, message, confirmText = t('common.accept'), danger = false }) {
   const r = await openDialog(
     title,
     `<p class="dlg-msg">${escapeHtml(message)}</p>` +
-    '<label class="field"><span>Contraseña</span>' +
+    `<label class="field"><span>${escapeHtml(t('dialog.password'))}</span>` +
     '<input name="password" type="password" required autocomplete="current-password"></label>',
     confirmText,
     { danger },
@@ -94,13 +95,13 @@ export async function passwordDialog({ title, message, confirmText = 'Confirmar'
 /** Edita un producto. Devuelve {name, quantity, note} o null. */
 export async function itemDialog(item) {
   return openDialog(
-    'Editar producto',
-    `<label class="field"><span>Producto</span>` +
+    t('dialog.item.title'),
+    `<label class="field"><span>${escapeHtml(t('dialog.item.name'))}</span>` +
     `<input name="name" required maxlength="100" autocomplete="off" value="${escapeHtml(item.name)}"></label>` +
-    `<label class="field"><span>Cantidad</span>` +
+    `<label class="field"><span>${escapeHtml(t('dialog.item.qty'))}</span>` +
     `<input name="quantity" type="number" inputmode="numeric" min="1" step="1" required value="${escapeHtml(item.quantity)}"></label>` +
-    `<label class="field"><span>Nota (opcional)</span>` +
+    `<label class="field"><span>${escapeHtml(t('dialog.item.note'))}</span>` +
     `<input name="note" maxlength="${MAX_NOTE}" autocomplete="off" value="${escapeHtml(item.note || '')}"></label>`,
-    'Guardar',
+    t('common.save'),
   );
 }

@@ -4,10 +4,12 @@
 
 Sirve `app/` por HTTP (`python -m http.server 8000`) y abre:
 
-- `/tests/store.test.html`: lógica de dominio con un storage falso (26 pruebas).
-- `/tests/storage.test.html`: persistencia contra IndexedDB real (7 pruebas).
+- `/tests/store.test.html`: lógica de dominio con un storage falso.
+- `/tests/storage.test.html`: persistencia contra IndexedDB real (incluye migración v1→v2 y banderas).
+- `/tests/sync.test.html`: motor de sincronización, Auth y Firestore contra un servidor falso con las mismas reglas.
+- `/tests/ui.test.html`: idiomas, ajustes (tema/idioma) y lista inicial (spec 003).
 
-Todas deben aparecer en verde.
+Todas deben aparecer en verde. Además, **sin navegador**: `node app/tests/contrast.check.mjs` comprueba el contraste WCAG (≥ 4,5:1 texto, ≥ 3:1 componentes) de todos los pares de colores en ambos temas; hay que ejecutarlo cada vez que se toquen las variables de color de `styles.css`.
 
 ## Checklist manual en un móvil real (T021)
 
@@ -37,7 +39,7 @@ Marca cada criterio de aceptación de `specs/001-lista-compra/spec.md`. Anota fe
 - [ ] AC3.4 Renombro una lista.
 - [ ] AC3.5 Eliminar una lista pide confirmación y borra también sus productos.
 - [ ] AC3.6 No puedo crear una lista sin nombre.
-- [ ] AC3.7 En el primer arranque veo un estado vacío que invita a crear la primera lista.
+- [ ] AC3.7 *(modificado por la spec 003, AC13.8)* En el primer arranque veo la lista inicial «Compra básica»; el estado vacío que invita a crear la primera lista aparece cuando borro todas mis listas.
 
 **US4 · PWA y offline**
 - [ ] AC4.1 Abro el enlace en el navegador y puedo instalar la app.
@@ -88,6 +90,50 @@ Automáticas: `/tests/sync.test.html` (motor, Auth y Firestore contra un servido
 - [ ] AC10.2 Tras eliminarla, desaparecen mi cuenta y mis listas de la consola de Firebase (Authentication y Firestore).
 - [ ] AC10.4 El otro dispositivo pasa a modo local (puede tardar hasta una hora, hasta que caduca su token).
 - [ ] Consumo: tras un día de uso, lecturas y escrituras muy por debajo de la cuota (consola de Firebase) y el proyecto sigue en plan Spark sin facturación.
+
+## Spec 003 · diseño, tema, idioma y lista inicial
+
+Haz la prueba en el móvil real, con la app ya instalada o abierta desde GitHub Pages. Para probar «primer arranque», usa una ventana de incógnito o borra los datos del sitio.
+
+**US11 · Diseño**
+- [ ] AC11.1 Las barras superior/inferior y los diálogos son translúcidos con desenfoque sobre un fondo con degradado naranja suave.
+- [ ] AC11.2 Esquinas redondeadas y acento naranja en inicio, lista, ajustes, cuenta y diálogos.
+- [ ] AC11.3 Al marcar un producto se anima el tachado; al cambiar de pantalla hay una entrada suave.
+- [ ] AC11.4 Con «Reducir animaciones» activado en el sistema, desaparecen los movimientos.
+- [ ] AC11.5 Con «Reducir transparencia» (o en un navegador antiguo) las superficies pasan a opacas y todo sigue legible.
+- [ ] AC11.6 El texto se lee bien en ambos temas (también lo comprueba `contrast.check.mjs`).
+- [ ] AC11.7 Los botones y casillas se aciertan con el pulgar.
+- [ ] AC11.9 Con una lista de ~200 productos, desplazarse y marcar sigue siendo fluido.
+- [ ] AC11.10 En modo avión la app abre y funciona igual (sin recursos externos).
+- [ ] AC11.11 El icono instalado es el carrito con check blanco sobre naranja (si conservas el icono antiguo, desinstala y vuelve a instalar la app).
+
+**US12 · Tema**
+- [ ] AC12.1 En un arranque nuevo la app es clara aunque el móvil esté en tema oscuro.
+- [ ] AC12.2 Ajustes → Tema: Oscuro / Claro / Según el sistema se aplican al instante.
+- [ ] AC12.3 La elección se conserva al cerrar y reabrir la app, incluso en modo avión.
+- [ ] AC12.4 Al abrir la app no se ve un destello del tema equivocado.
+- [ ] AC12.5 La barra de estado del navegador o de la app instalada coincide con el tema.
+- [ ] AC12.6 El tema claro también se ve bien.
+
+**US13 · Lista inicial**
+- [ ] AC13.1 En un arranque nuevo existe «Compra básica» con 36 productos pendientes.
+- [ ] AC13.2 Puedo renombrarla, editar, marcar y borrar productos como en cualquier lista.
+- [ ] AC13.3 Si borro la lista inicial y reabro la app, no vuelve.
+- [ ] AC13.4 En una instalación que ya tenía listas, no aparece ninguna lista nueva.
+- [ ] AC13.5 Si cambio el idioma después, los nombres ya creados no se traducen.
+- [ ] AC13.6 (con cuenta, dos dispositivos) Al iniciar sesión en un segundo dispositivo nuevo, queda una sola lista inicial, sin duplicados, y lo que ya había marcado se conserva.
+
+**US14 · Idioma**
+- [ ] AC14.1 Ajustes → Idioma cambia entre Español y English al instante, sin recargar.
+- [ ] AC14.2 En un arranque nuevo se usa el idioma del móvil si es español o inglés; si no, español.
+- [ ] AC14.3 La elección se conserva al reabrir.
+- [ ] AC14.4 Pantallas, botones, diálogos, estados vacíos, errores de cuenta y de sincronización, y el título de la página están traducidos.
+- [ ] AC14.5 El mensaje de credenciales incorrectas sigue siendo genérico en ambos idiomas.
+
+**US15 · Ajustes**
+- [ ] AC15.1 Hay un botón de ajustes en el inicio, junto al de cuenta.
+- [ ] AC15.2 Ajustes muestra Tema, Idioma y (con sincronización) el acceso a la cuenta.
+- [ ] AC15.3 Funciona sin conexión; la flecha y el botón Atrás vuelven al inicio.
 
 ## Resultado de la ejecución
 

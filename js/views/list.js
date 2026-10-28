@@ -2,10 +2,11 @@
 
 import { escapeHtml, icon, MAX_NOTE } from '../util.js';
 import { promptDialog, itemDialog } from './dialogs.js';
+import { t } from '../i18n/index.js';
 
-function itemHtml(i) {
+function itemHtml(i, justToggled) {
   const name = escapeHtml(i.name);
-  return `<li class="item${i.done ? ' done' : ''}" data-id="${escapeHtml(i.id)}">` +
+  return `<li class="item${i.done ? ' done' : ''}${justToggled ? ' just-toggled' : ''}" data-id="${escapeHtml(i.id)}">` +
     '<label class="item-check">' +
     `<input type="checkbox" data-action="toggle"${i.done ? ' checked' : ''}>` +
     '<span class="item-text">' +
@@ -13,8 +14,8 @@ function itemHtml(i) {
     `<span class="item-qty">×${i.quantity}</span>` +
     (i.note ? `<span class="item-note">${escapeHtml(i.note)}</span>` : '') +
     '</span></label>' +
-    `<button class="icon-btn" data-action="edit" aria-label="Editar ${name}">${icon('edit')}</button>` +
-    `<button class="icon-btn" data-action="delete" aria-label="Eliminar ${name}">${icon('trash')}</button>` +
+    `<button class="icon-btn" data-action="edit" aria-label="${escapeHtml(t('list.edit', { name: i.name }))}">${icon('edit')}</button>` +
+    `<button class="icon-btn" data-action="delete" aria-label="${escapeHtml(t('list.delete', { name: i.name }))}">${icon('trash')}</button>` +
     '</li>';
 }
 
@@ -24,23 +25,23 @@ export function mountList(root, { store, listId }) {
 
   root.innerHTML =
     '<header class="topbar">' +
-    `<a class="icon-btn" href="#/" aria-label="Volver a mis listas">${icon('back')}</a>` +
+    `<a class="icon-btn" href="#/" aria-label="${escapeHtml(t('common.back'))}">${icon('back')}</a>` +
     '<h1 id="list-title"></h1>' +
-    `<button class="icon-btn" data-action="rename-list" aria-label="Renombrar lista">${icon('edit')}</button>` +
+    `<button class="icon-btn" data-action="rename-list" aria-label="${escapeHtml(t('list.rename'))}">${icon('edit')}</button>` +
     '</header>' +
     '<main class="content">' +
     '<ul id="items" class="items"></ul>' +
-    '<div id="empty" class="empty" hidden><p class="empty-title">Sin productos</p><p>Añade el primero abajo.</p></div>' +
+    `<div id="empty" class="empty" hidden><p class="empty-title">${escapeHtml(t('list.empty.title'))}</p><p>${escapeHtml(t('list.empty.text'))}</p></div>` +
     '<button id="clear-done" class="btn btn-ghost btn-block" data-action="clear-done" hidden></button>' +
     '</main>' +
     '<form id="add-form" class="addbar" autocomplete="off">' +
     '<div class="addbar-row">' +
-    '<input name="name" class="input" placeholder="Añadir producto" aria-label="Producto" required maxlength="100" enterkeyhint="done">' +
-    `<button type="submit" class="btn btn-primary btn-square" aria-label="Añadir">${icon('plus')}</button>` +
+    `<input name="name" class="input" placeholder="${escapeHtml(t('list.add.placeholder'))}" aria-label="${escapeHtml(t('list.add.aria'))}" required maxlength="100" enterkeyhint="done">` +
+    `<button type="submit" class="btn btn-primary btn-square" aria-label="${escapeHtml(t('list.add.btn'))}">${icon('plus')}</button>` +
     '</div>' +
     '<div class="addbar-row">' +
-    '<input name="quantity" class="input input-qty" type="number" inputmode="numeric" min="1" step="1" value="1" aria-label="Cantidad">' +
-    `<input name="note" class="input" placeholder="Nota (opcional)" aria-label="Nota" maxlength="${MAX_NOTE}">` +
+    `<input name="quantity" class="input input-qty" type="number" inputmode="numeric" min="1" step="1" value="1" aria-label="${escapeHtml(t('list.qty'))}">` +
+    `<input name="note" class="input" placeholder="${escapeHtml(t('list.note.placeholder'))}" aria-label="${escapeHtml(t('list.note.aria'))}" maxlength="${MAX_NOTE}">` +
     '</div></form>';
 
   const $ = (sel) => root.querySelector(sel);
@@ -49,25 +50,27 @@ export function mountList(root, { store, listId }) {
   const empty = $('#empty');
   const clearBtn = $('#clear-done');
   const form = $('#add-form');
+  let justToggledId = null; // para animar el tachado solo del producto que se acaba de marcar (AC11.3)
 
   function render() {
     const list = store.getList(listId);
     if (!list) { location.hash = '#/'; return; }
     titleEl.textContent = list.name;
-    document.title = list.name + ' · Lista de la compra';
+    document.title = t('list.docTitle', { name: list.name });
     const items = store.getSortedItems(listId);
-    ul.innerHTML = items.map(itemHtml).join('');
+    ul.innerHTML = items.map((i) => itemHtml(i, i.id === justToggledId && i.done)).join('');
+    justToggledId = null;
     empty.hidden = items.length > 0;
     const done = items.filter((i) => i.done).length;
     clearBtn.hidden = done === 0;
-    clearBtn.textContent = `Borrar comprados (${done})`;
+    clearBtn.textContent = t('list.clearDone', { n: done });
   }
 
   // Marcar / desmarcar (AC1.3, AC1.4)
   root.addEventListener('change', (e) => {
     if (!e.target.matches('[data-action="toggle"]')) return;
     const li = e.target.closest('li[data-id]');
-    if (li) store.toggleItem(li.dataset.id);
+    if (li) { justToggledId = li.dataset.id; store.toggleItem(li.dataset.id); }
   }, { signal });
 
   root.addEventListener('click', async (e) => {
@@ -89,7 +92,7 @@ export function mountList(root, { store, listId }) {
     } else if (action === 'rename-list') {
       const list = store.getList(listId);
       if (!list) return;
-      const name = await promptDialog({ title: 'Renombrar lista', label: 'Nombre de la lista', value: list.name });
+      const name = await promptDialog({ title: t('dialog.renameList.title'), label: t('dialog.listName'), value: list.name });
       if (name !== null) store.renameList(listId, name);
     }
   }, { signal });
