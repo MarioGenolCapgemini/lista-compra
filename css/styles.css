@@ -1,0 +1,189 @@
+/* Mobile-first. Zonas táctiles >= 44px (NFR-001). Contraste AA. */
+
+:root {
+  --bg: #f6f7f4;
+  --surface: #ffffff;
+  --text: #1d2521;
+  --muted: #566159;      /* 6.1:1 sobre --surface */
+  --done: #6b756f;       /* texto de comprados: atenuado pero legible (4.7:1) */
+  --primary: #1f7a4d;    /* 5.4:1 con texto blanco */
+  --primary-dark: #17603c;
+  --danger: #b3261e;
+  --border: #d9ded9;
+  --radius: 14px;
+  --tap: 48px;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.loading { padding: 32px; text-align: center; color: var(--muted); }
+
+.icon { width: 24px; height: 24px; flex: none; }
+
+/* ---- Barra superior ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 4px;
+  padding: calc(8px + env(safe-area-inset-top)) 8px 8px 16px;
+  background: var(--primary);
+  color: #fff;
+}
+.topbar h1 {
+  flex: 1; margin: 0;
+  font-size: 1.25rem; font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.topbar .icon-btn { color: #fff; }
+.topbar .icon-btn:hover { background: rgba(255, 255, 255, .15); }
+
+/* ---- Contenido ---- */
+.content { flex: 1; padding: 12px 12px 24px; }
+
+.empty { text-align: center; color: var(--muted); padding: 48px 16px; }
+.empty-title { font-size: 1.1rem; font-weight: 600; color: var(--text); margin: 0 0 4px; }
+
+/* ---- Botones ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--tap); padding: 0 18px;
+  border: 1px solid transparent; border-radius: var(--radius);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-ghost { background: transparent; color: var(--primary); border-color: var(--border); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-block { width: 100%; }
+.btn-square { width: var(--tap); padding: 0; flex: none; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; flex: none;
+  border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted);
+  cursor: pointer; text-decoration: none;
+}
+.icon-btn:hover { background: rgba(0, 0, 0, .06); }
+
+:focus-visible { outline: 3px solid #0b57d0; outline-offset: 2px; }
+
+/* ---- Tarjetas de listas ---- */
+.cards, .items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+.card {
+  display: flex; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding-right: 4px;
+}
+.card-main {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 64px; padding: 8px 16px;
+  color: inherit; text-decoration: none;
+}
+.card-title { font-weight: 600; font-size: 1.05rem; overflow-wrap: anywhere; }
+.card-sub { color: var(--muted); font-size: .9rem; }
+
+/* ---- Productos ---- */
+.item {
+  display: flex; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding-right: 4px;
+}
+.item-check {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 14px;
+  min-height: 56px; padding: 6px 8px 6px 14px;
+  cursor: pointer;
+}
+.item-check input[type="checkbox"] {
+  width: 28px; height: 28px; flex: none; margin: 0;
+  accent-color: var(--primary); cursor: pointer;
+}
+.item-text { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
+.item-name { font-weight: 600; overflow-wrap: anywhere; }
+.item-qty {
+  font-size: .85rem; font-weight: 600; color: var(--primary);
+  background: #e4f2ea; border-radius: 999px; padding: 0 8px;
+}
+.item-note { flex-basis: 100%; font-size: .9rem; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Comprados: tachado + atenuado (AC1.3). La decoración se aplica a cada span
+   para que no dependa de la propagación entre elementos. */
+.item.done { background: #f0f2ef; }
+.item.done .item-name,
+.item.done .item-qty,
+.item.done .item-note {
+  text-decoration: line-through;
+  color: var(--done);
+}
+.item.done .item-qty { background: #e3e7e4; }
+
+#clear-done { margin-top: 16px; }
+
+/* ---- Barras inferiores (una mano) ---- */
+.addbar, .bottombar {
+  position: sticky; bottom: 0; z-index: 5;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.addbar { display: grid; gap: 8px; }
+.addbar-row { display: flex; gap: 8px; }
+
+.input {
+  flex: 1; min-width: 0; min-height: var(--tap);
+  padding: 0 14px;
+  border: 1px solid #aab3ad; border-radius: var(--radius);
+  background: #fff; color: var(--text);
+  font: inherit; /* 16px evita el zoom automático en iOS */
+}
+.input-qty { flex: 0 0 84px; text-align: center; }
+
+/* ---- Diálogos ---- */
+.dlg {
+  width: min(92vw, 420px);
+  border: 0; border-radius: 18px; padding: 20px;
+  color: var(--text);
+}
+.dlg::backdrop { background: rgba(0, 0, 0, .45); }
+.dlg h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.dlg-msg { margin: 0 0 8px; overflow-wrap: anywhere; }
+.field { display: grid; gap: 4px; margin-bottom: 12px; font-size: .9rem; color: var(--muted); }
+.field input {
+  min-height: var(--tap); padding: 0 14px;
+  border: 1px solid #aab3ad; border-radius: var(--radius);
+  font: 1rem system-ui, sans-serif; color: var(--text);
+}
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+/* ---- Aviso de persistencia ---- */
+.banner {
+  position: sticky; top: 0; z-index: 20;
+  padding: 10px 16px; text-align: center;
+  background: #fdecea; color: #7a1913; font-size: .9rem; font-weight: 600;
+}
+.banner[hidden], [hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .icon-btn { transition: background-color .15s; }
+}
