@@ -2,6 +2,7 @@
 // `deps.idb` permite inyectar otra implementación (p. ej. en Node para verificación).
 
 import { createStorage } from '../js/storage.js';
+import { createStore } from '../js/store.js';
 import { assert } from './runner.js';
 
 const DB = 'lista-compra-test';
@@ -91,6 +92,76 @@ export function register(t, { idb = globalThis.indexedDB } = {}) {
     const data = await s.loadAll();
     assert.deepEqual(data.lists.map((l) => l.id), ['L2']);
     assert.deepEqual(data.items.map((i) => i.id), ['I3']);
+    await s.destroy();
+  });
+
+  // ---- Spec 002 · T103: esquema v2 ----
+  t.test('T103: migrar una BD v1 a v2 conserva los datos y añade el almacén `meta`', async () => {
+    await createStorage(DB, idb).destroy();
+    // Se crea a mano una BD con el esquema de la spec 001 (versión 1).
+    await new Promise((resolve, reject) => {
+      const r = idb.open(DB, 1);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        d.createObjectStore('lists', { keyPath: 'id' });
+        d.createObjectStore('items', { keyPath: 'id' }).createIndex('byList', 'listId');
+      };
+      r.onsuccess = () => {
+        const d = r.result;
+        const tr = d.transaction(['lists', 'items'], 'readwrite');
+        tr.objectStore('lists').put({ id: 'L1', name: 'Antigua', createdAt: 1 });
+        tr.objectStore('items').put({ id: 'I1', listId: 'L1', name: 'Pan', quantity: 2, note: 'integral', done: true, createdAt: 2 });
+        tr.oncomplete = () => { d.close(); resolve(); };
+        tr.onerror = () => reject(tr.error);
+      };
+      r.onerror = () => reject(r.error);
+    });
+
+    const s = createStorage(DB, idb);
+    await s.open(); // aquí se produce la migración a la v2
+    const data = await s.loadAll();
+    assert.equal(data.lists.length, 1);
+    assert.equal(data.lists[0].name, 'Antigua');
+    assert.equal(data.items[0].name, 'Pan');
+    assert.equal(data.items[0].done, true);
+    assert.equal(await s.getMeta(), null, 'el almacén meta existe y está vacío');
+
+    // El store normaliza los registros antiguos: sin pendientes ni lápidas.
+    const store = createStore();
+    await store.init(s);
+    assert.equal(store.getList('L1').name, 'Antigua');
+    assert.equal(store.getSortedItems('L1')[0].quantity, 2);
+    assert.equal(store.countDirty(), 0);
+    await s.destroy();
+  });
+
+  t.test('T103: lotes (putRecords, deleteRecords, clearAll) y metadatos', async () => {
+    const s = await fresh(idb);
+    await s.putRecords(
+      [L('L1', 'Uno'), L('L2', 'Dos')],
+      [I('I1', 'L1', 'A'), I('I2', 'L1', 'B'), I('I3', 'L2', 'C')],
+    );
+    let data = await s.loadAll();
+    assert.equal(data.lists.length, 2);
+    assert.equal(data.items.length, 3);
+
+    await s.deleteRecords(['L2'], ['I1']);
+    data = await s.loadAll();
+    assert.deepEqual(data.lists.map((l) => l.id), ['L1']);
+    assert.deepEqual(data.items.map((i) => i.id).sort(), ['I2', 'I3']);
+
+    await s.setMeta({ userId: 'u1', email: 'a@b.co', cursor: '2026-10-28T10:00:00.000Z', session: { refreshToken: 'r' } });
+    const m = await s.getMeta();
+    assert.deepEqual([m.userId, m.email, m.session.refreshToken], ['u1', 'a@b.co', 'r']);
+    await s.setMeta({ userId: 'u2' });
+    assert.equal((await s.getMeta()).userId, 'u2', 'setMeta sobrescribe');
+
+    await s.clearAll();
+    data = await s.loadAll();
+    assert.deepEqual([data.lists.length, data.items.length], [0, 0]);
+    assert.equal((await s.getMeta()).userId, 'u2', 'clearAll no toca meta');
+    await s.deleteMeta();
+    assert.equal(await s.getMeta(), null);
     await s.destroy();
   });
 

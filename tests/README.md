@@ -57,6 +57,38 @@ Marca cada criterio de aceptación de `specs/001-lista-compra/spec.md`. Anota fe
 - [ ] Lighthouse (DevTools → Lighthouse): categorías PWA y Accesibilidad sin fallos críticos.
 - [ ] Rendimiento: con ~20 listas y ~200 productos en una lista, marcar y añadir sigue siendo fluido.
 
+## Spec 002 · cuenta y sincronización
+
+Automáticas: `/tests/sync.test.html` (motor, Auth y Firestore contra un servidor falso con las mismas reglas) y las ampliaciones de `store.test.html` y `storage.test.html` (migración v1→v2).
+
+**Manual con Firebase real y dos dispositivos** (o móvil y ordenador). Requiere `config.js` relleno y las reglas publicadas.
+
+- [ ] AC6.1 Con `config.js` relleno aparece el icono de cuenta en la pantalla de inicio; con él vacío, no.
+- [ ] AC6.2 Creo una cuenta con correo y contraseña de 8+ caracteres y quedo con la sesión iniciada.
+- [ ] AC6.3 Un correo mal escrito o una contraseña corta se rechazan con un mensaje claro.
+- [ ] AC6.4 Cierro sesión y vuelvo a entrar con mi correo y contraseña.
+- [ ] AC6.5 Contraseña incorrecta y correo inexistente muestran el mismo mensaje.
+- [ ] AC6.6 «He olvidado mi contraseña» envía un correo y el enlace me deja elegir una nueva.
+- [ ] AC6.7 En modo avión, las acciones de cuenta avisan de que hace falta red.
+- [ ] AC6.8 Cierro y reabro la app: sigo con la sesión iniciada.
+- [ ] AC7.1 Al crear la cuenta, mis listas locales se suben sin duplicados.
+- [ ] AC7.2 En un segundo dispositivo, al iniciar sesión aparecen mis listas.
+- [ ] AC7.3 Con listas distintas en cada dispositivo, al entrar se combinan sin perder ninguna.
+- [ ] AC7.4 Un cambio en un dispositivo aparece en el otro en pocos segundos (con la app abierta).
+- [ ] AC7.5 En modo avión sigo trabajando; al volver la red se sincroniza solo.
+- [ ] AC7.6 Edito el mismo producto en los dos dispositivos (uno sin conexión): gana el cambio más reciente en ambos.
+- [ ] AC7.7 Borro un producto en uno: desaparece en el otro y no reaparece.
+- [ ] AC7.9 (con dos cuentas) Cada cuenta ve solo sus listas.
+- [ ] AC7.10 Al iniciar sesión con otra cuenta en un móvil con datos, se me pregunta qué hacer; «Cancelar» no sube nada.
+- [ ] AC8.2 Cerrar sesión ofrece conservar o eliminar la copia local, y la nube no cambia.
+- [ ] AC8.4 Sin sesión, la app sigue funcionando en local.
+- [ ] AC9.1 El indicador muestra sincronizado, sincronizando, sin conexión o error.
+- [ ] AC9.2 Un error explica que los datos siguen guardados en el dispositivo.
+- [ ] AC10.1 «Eliminar cuenta» pide confirmación y la contraseña.
+- [ ] AC10.2 Tras eliminarla, desaparecen mi cuenta y mis listas de la consola de Firebase (Authentication y Firestore).
+- [ ] AC10.4 El otro dispositivo pasa a modo local (puede tardar hasta una hora, hasta que caduca su token).
+- [ ] Consumo: tras un día de uso, lecturas y escrituras muy por debajo de la cuota (consola de Firebase) y el proyecto sigue en plan Spark sin facturación.
+
 ## Resultado de la ejecución
 
 | Fecha | Dispositivo / navegador | Resultado | Notas |

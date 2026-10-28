@@ -1,7 +1,9 @@
 // Capa de persistencia sobre IndexedDB (única capa que conoce IndexedDB).
-// Modelo: stores `lists` e `items` (índice `byList` sobre `listId`).
+// Esquema v2: stores `lists`, `items` (índice `byList`) y `meta` (estado de sincronización).
+// La versión 1 solo tenía `lists` e `items`; la migración no toca los datos existentes.
 
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const META_KEY = 'sync';
 
 export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedDB) {
   let db = null;
@@ -19,6 +21,9 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
         if (!d.objectStoreNames.contains('items')) {
           const items = d.createObjectStore('items', { keyPath: 'id' });
           items.createIndex('byList', 'listId');
+        }
+        if (!d.objectStoreNames.contains('meta')) { // novedad de la v2
+          d.createObjectStore('meta', { keyPath: 'key' });
         }
       };
       request.onsuccess = () => {
@@ -73,6 +78,46 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
     };
   });
 
+  // ---- Operaciones por lote (sincronización) ----
+
+  /** Guarda varias listas y productos en una sola transacción. */
+  const putRecords = (lists = [], items = []) => tx(['lists', 'items'], 'readwrite', (t) => {
+    const ls = t.objectStore('lists');
+    const is = t.objectStore('items');
+    for (const l of lists) ls.put({ ...l });
+    for (const i of items) is.put({ ...i });
+  });
+
+  /** Borra físicamente varias listas y productos por id. */
+  const deleteRecords = (listIds = [], itemIds = []) => tx(['lists', 'items'], 'readwrite', (t) => {
+    const ls = t.objectStore('lists');
+    const is = t.objectStore('items');
+    for (const id of listIds) ls.delete(id);
+    for (const id of itemIds) is.delete(id);
+  });
+
+  /** Vacía listas y productos (no toca `meta`). */
+  const clearAll = () => tx(['lists', 'items'], 'readwrite', (t) => {
+    t.objectStore('lists').clear();
+    t.objectStore('items').clear();
+  });
+
+  // ---- Metadatos de sincronización ----
+
+  function getMeta() {
+    const out = { value: null };
+    return tx('meta', 'readonly', (t) => {
+      t.objectStore('meta').get(META_KEY).onsuccess = (e) => { out.value = e.target.result || null; };
+      return out;
+    }).then((o) => o.value);
+  }
+
+  const setMeta = (meta) => tx('meta', 'readwrite', (t) => {
+    t.objectStore('meta').put({ ...meta, key: META_KEY });
+  });
+
+  const deleteMeta = () => tx('meta', 'readwrite', (t) => { t.objectStore('meta').delete(META_KEY); });
+
   async function requestPersistence() {
     try {
       if (globalThis.navigator && navigator.storage && navigator.storage.persist) {
@@ -99,6 +144,8 @@ export function createStorage(dbName = 'lista-compra', idb = globalThis.indexedD
   return {
     open, close, destroy, loadAll,
     putList, putItem, deleteItem, deleteItems, deleteListCascade,
+    putRecords, deleteRecords, clearAll,
+    getMeta, setMeta, deleteMeta,
     requestPersistence,
   };
 }

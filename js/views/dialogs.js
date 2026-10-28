@@ -49,6 +49,48 @@ export async function confirmDialog({ title, message, confirmText = 'Aceptar', d
   return r !== null;
 }
 
+/**
+ * Diálogo con varias acciones. Devuelve el `value` de la elegida, o null si se cancela.
+ * `choices`: [{ value, label, danger? }]
+ */
+export function choiceDialog({ title, message, choices, cancelText = 'Cancelar' }) {
+  return new Promise((resolve) => {
+    const id = 'dlg-title-' + (++seq);
+    const d = document.createElement('dialog');
+    d.className = 'dlg';
+    d.setAttribute('aria-labelledby', id);
+    d.innerHTML =
+      '<form method="dialog">' +
+      `<h2 id="${id}">${escapeHtml(title)}</h2>` +
+      `<p class="dlg-msg">${escapeHtml(message)}</p>` +
+      '<div class="dlg-actions dlg-actions--stack">' +
+      choices.map((c) =>
+        `<button type="submit" value="${escapeHtml(c.value)}" class="btn ${c.danger ? 'btn-danger' : 'btn-primary'}">${escapeHtml(c.label)}</button>`).join('') +
+      `<button type="submit" value="__cancel" formnovalidate class="btn btn-ghost">${escapeHtml(cancelText)}</button>` +
+      '</div></form>';
+    document.body.appendChild(d);
+    d.addEventListener('close', () => {
+      const v = d.returnValue;
+      d.remove();
+      resolve(v && v !== '__cancel' ? v : null);
+    });
+    d.showModal();
+  });
+}
+
+/** Pide la contraseña para confirmar una acción. Devuelve string o null. */
+export async function passwordDialog({ title, message, confirmText = 'Confirmar', danger = false }) {
+  const r = await openDialog(
+    title,
+    `<p class="dlg-msg">${escapeHtml(message)}</p>` +
+    '<label class="field"><span>Contraseña</span>' +
+    '<input name="password" type="password" required autocomplete="current-password"></label>',
+    confirmText,
+    { danger },
+  );
+  return r ? r.password : null;
+}
+
 /** Edita un producto. Devuelve {name, quantity, note} o null. */
 export async function itemDialog(item) {
   return openDialog(

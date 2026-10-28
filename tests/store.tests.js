@@ -12,7 +12,8 @@ function fakeStorage({ lists = [], items = [], failOpen = false } = {}) {
     async open() { if (failOpen) throw new Error('no se puede abrir'); },
     async loadAll() { return { lists, items }; },
   };
-  for (const name of ['putList', 'putItem', 'deleteItem', 'deleteItems', 'deleteListCascade']) {
+  for (const name of ['putList', 'putItem', 'deleteItem', 'deleteItems', 'deleteListCascade',
+    'putRecords', 'deleteRecords', 'clearAll']) {
     s[name] = async (arg) => {
       if (s.failWrites) throw new Error('fallo de escritura');
       calls.push([name, arg]);
@@ -269,6 +270,145 @@ export function register(t) {
     off();
     store.addList('B');
     assert.equal(n, 1);
+  });
+
+  // ---- Spec 002 · T104: soporte de sincronización en el store ----
+  const remoteItem = (over = {}) => ({
+    id: 'R1', listId: 'L1', name: 'Remoto', quantity: 1, note: '', done: false,
+    createdAt: 10, updatedAt: 100, deletedAt: null, ...over,
+  });
+  const remoteList = (over = {}) => ({ id: 'L1', name: 'Lista remota', createdAt: 10, updatedAt: 100, deletedAt: null, ...over });
+
+  t.test('T104: cada modificación deja el registro pendiente de enviar (dirty)', async () => {
+    const { store } = await newStore();
+    assert.equal(store.hasDirty(), false);
+    const l = store.addList('Súper');
+    const i = store.addItem(l.id, { name: 'Pan' });
+    assert.equal(store.countDirty(), 2);
+    store.markClean({ lists: [{ id: l.id, updatedAt: store.getList(l.id).updatedAt }], items: [{ id: i.id, updatedAt: i.updatedAt }] });
+    assert.equal(store.countDirty(), 0);
+    store.toggleItem(i.id);
+    assert.equal(store.countDirty(), 1);
+  });
+
+  t.test('T104: markClean no descarta una edición hecha mientras se enviaba', async () => {
+    const { store } = await newStore();
+    const l = store.addList('Súper');
+    const i = store.addItem(l.id, { name: 'Pan' });
+    const enviado = store.getDirty();
+    store.updateItem(i.id, { name: 'Pan integral' }); // edición durante el envío
+    store.markClean({
+      lists: enviado.lists.map((x) => ({ id: x.id, updatedAt: x.updatedAt })),
+      items: enviado.items.map((x) => ({ id: x.id, updatedAt: x.updatedAt })),
+    });
+    assert.equal(store.getDirty().items.length, 1, 'la edición sigue pendiente');
+    assert.equal(store.getDirty().lists.length, 0);
+  });
+
+  t.test('T104: sin cuenta se borra físicamente; con cuenta se crean lápidas que la UI no ve', async () => {
+    const { store, storage } = await newStore();
+    const l = store.addList('Súper');
+    const a = store.addItem(l.id, { name: 'A' });
+    store.deleteItem(a.id);
+    assert.equal(store.getDirty().items.length, 0, 'sin cuenta no queda rastro');
+
+    await store.flush();
+    const llamadasSinCuenta = storage.calls.length;
+    store.setTrackDeletes(true);
+    const b = store.addItem(l.id, { name: 'B' });
+    const c = store.addItem(l.id, { name: 'C' });
+    store.markAllDirty();
+    store.deleteItem(b.id);
+    assert.deepEqual(store.getSortedItems(l.id).map((i) => i.name), ['C'], 'la UI no ve la lápida');
+    assert.equal(store.getItemCount(l.id), 1);
+    const lapida = store.getDirty().items.find((i) => i.id === b.id);
+    assert.ok(lapida && lapida.deletedAt != null, 'lápida pendiente de enviar');
+    store.toggleItem(c.id);
+    assert.equal(store.clearDone(l.id), 1);
+    assert.equal(store.getItemCount(l.id), 0);
+    await store.flush();
+    assert.ok(storage.calls.slice(llamadasSinCuenta).every(([n]) => n !== 'deleteItem' && n !== 'deleteItems' && n !== 'deleteListCascade'), 'no hay borrados físicos con cuenta');
+  });
+
+  t.test('T104: borrar una lista con cuenta deja lápidas para la lista y sus productos', async () => {
+    const { store } = await newStore();
+    store.setTrackDeletes(true);
+    const l = store.addList('Súper');
+    store.addItem(l.id, { name: 'A' });
+    store.addItem(l.id, { name: 'B' });
+    store.markAllDirty();
+    store.deleteList(l.id);
+    assert.equal(store.getLists().length, 0);
+    const d = store.getDirty();
+    assert.equal(d.lists.filter((x) => x.deletedAt != null).length, 1);
+    assert.equal(d.items.filter((x) => x.deletedAt != null).length, 2);
+  });
+
+  t.test('T104: applyRemote inserta, actualiza solo lo más reciente y es idempotente', async () => {
+    const { store } = await newStore();
+    store.applyRemote({ lists: [remoteList()], items: [remoteItem()] });
+    assert.equal(store.getList('L1').name, 'Lista remota');
+    assert.equal(store.countDirty(), 0, 'lo recibido no queda pendiente');
+    // más antiguo: no pisa
+    assert.equal(store.applyRemote({ items: [remoteItem({ name: 'Viejo', updatedAt: 50 })] }), 0);
+    assert.equal(store.getSortedItems('L1')[0].name, 'Remoto');
+    // más reciente: sí
+    assert.equal(store.applyRemote({ items: [remoteItem({ name: 'Nuevo', updatedAt: 200, done: true })] }), 1);
+    assert.deepEqual([store.getSortedItems('L1')[0].name, store.getSortedItems('L1')[0].done], ['Nuevo', true]);
+    // repetir lo mismo no cambia nada
+    assert.equal(store.applyRemote({ items: [remoteItem({ name: 'Nuevo', updatedAt: 200, done: true })] }), 0);
+  });
+
+  t.test('T104: un cambio local más reciente y pendiente no lo pisa un remoto antiguo', async () => {
+    const { store } = await newStore();
+    store.applyRemote({ lists: [remoteList()], items: [remoteItem({ updatedAt: 100 })] });
+    store.updateItem('R1', { name: 'Local' });
+    const local = store.getSortedItems('L1')[0];
+    assert.ok(local.updatedAt > 100);
+    store.applyRemote({ items: [remoteItem({ name: 'Remoto antiguo', updatedAt: 150 })] });
+    assert.equal(store.getSortedItems('L1')[0].name, 'Local');
+    assert.equal(store.getDirty().items.length, 1, 'sigue pendiente de enviar');
+  });
+
+  t.test('T104: un borrado remoto elimina el local; una lápida local no se revive', async () => {
+    const { store } = await newStore();
+    store.setTrackDeletes(true);
+    store.applyRemote({ lists: [remoteList()], items: [remoteItem()] });
+    store.applyRemote({ items: [remoteItem({ deletedAt: 300, updatedAt: 300 })] });
+    assert.equal(store.getItemCount('L1'), 0);
+    store.applyRemote({ items: [remoteItem({ name: 'Resucitado', updatedAt: 999 })] });
+    assert.equal(store.getItemCount('L1'), 0, 'la lápida local no se revive');
+
+    store.applyRemote({ lists: [remoteList({ deletedAt: 400, updatedAt: 400 })] });
+    assert.equal(store.getLists().length, 0);
+    store.applyRemote({ items: [remoteItem({ id: 'R2', name: 'Huérfano', updatedAt: 500 })] });
+    assert.equal(store.getItemCount('L1'), 0, 'un producto de una lista borrada no se recupera');
+  });
+
+  t.test('T104: purgar lápidas solo quita las enviadas y antiguas', async () => {
+    const { store } = await newStore();
+    store.setTrackDeletes(true);
+    const l = store.addList('Súper');
+    const a = store.addItem(l.id, { name: 'A' });
+    const b = store.addItem(l.id, { name: 'B' });
+    store.deleteItem(a.id);
+    store.deleteItem(b.id);
+    const todas = store.getDirty().items;
+    store.markClean({ lists: [], items: todas.filter((x) => x.id === a.id).map((x) => ({ id: x.id, updatedAt: x.updatedAt })) });
+    assert.equal(store.purgeTombstones(Infinity), 1, 'solo la enviada');
+    assert.equal(store.getDirty().items.length, 1, 'la pendiente se conserva');
+    assert.equal(store.dropTombstones(), 1);
+    assert.equal(store.getDirty().items.length, 0);
+  });
+
+  t.test('T104: clearAllLocal vacía todo y persiste el vaciado', async () => {
+    const { store, storage } = await newStore();
+    const l = store.addList('Súper');
+    store.addItem(l.id, { name: 'A' });
+    store.clearAllLocal();
+    assert.equal(store.countLive(), 0);
+    await store.flush();
+    assert.ok(storage.calls.some(([n]) => n === 'clearAll'));
   });
 
   t.test('getters devuelven copias: mutarlas no altera el estado', async () => {

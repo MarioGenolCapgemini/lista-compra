@@ -1,8 +1,9 @@
 // Pantalla de inicio: todas las listas con su número de pendientes. (US3)
 
 import { escapeHtml, icon } from '../util.js';
-import { listHash } from '../router.js';
+import { listHash, ACCOUNT_HASH } from '../router.js';
 import { promptDialog, confirmDialog } from './dialogs.js';
+import { STATUS_TEXT } from './account.js';
 
 function pendingText(total, pending) {
   if (total === 0) return 'Lista vacía';
@@ -10,12 +11,17 @@ function pendingText(total, pending) {
   return pending === 1 ? '1 pendiente' : pending + ' pendientes';
 }
 
-export function mountHome(root, { store }) {
+export function mountHome(root, { store, sync = null }) {
   const ac = new AbortController();
   const { signal } = ac;
 
+  // Botón de cuenta: solo existe si la sincronización está configurada (AC6.1, AC9.3).
+  const accountBtn = sync
+    ? `<a class="icon-btn icon-btn--account" id="account-link" href="${ACCOUNT_HASH}" aria-label="Cuenta y sincronización">${icon('user')}<span class="dot" id="account-dot" aria-hidden="true"></span></a>`
+    : '';
+
   root.innerHTML =
-    '<header class="topbar"><h1>Mis listas</h1></header>' +
+    `<header class="topbar"><h1>Mis listas</h1>${accountBtn}</header>` +
     '<main class="content">' +
     '<ul id="lists" class="cards"></ul>' +
     '<div id="empty" class="empty" hidden>' +
@@ -78,8 +84,22 @@ export function mountHome(root, { store }) {
     }
   }, { signal });
 
+  // Punto de estado de la sincronización sobre el icono de cuenta.
+  const dot = root.querySelector('#account-dot');
+  function renderDot() {
+    if (!dot) return;
+    const s = sync.getState();
+    dot.className = 'dot dot--' + (s.signedIn ? s.status : 'off');
+    root.querySelector('#account-link').setAttribute(
+      'aria-label',
+      s.signedIn ? 'Cuenta y sincronización: ' + (STATUS_TEXT[s.status] || '') : 'Cuenta y sincronización',
+    );
+  }
+  const unsubSync = sync ? sync.subscribe(renderDot) : () => {};
+  renderDot();
+
   const unsubscribe = store.subscribe(render);
   render();
 
-  return () => { ac.abort(); unsubscribe(); };
+  return () => { ac.abort(); unsubscribe(); unsubSync(); };
 }
