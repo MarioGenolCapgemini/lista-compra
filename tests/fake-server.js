@@ -135,6 +135,31 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
       if (!uid) return err(401, 'Request had invalid authentication credentials', { status: 'UNAUTHENTICATED' });
       const path = decodeURIComponent(u.pathname);
 
+      if (path.endsWith('/documents:commit')) {
+        // Atómico, como el real: si las reglas rechazan una escritura, se rechaza toda la petición (403).
+        const staged = [];
+        for (const w of body.writes || []) {
+          if (w.delete) {
+            const d = parseDocName(w.delete);
+            if (!d || d.uid !== uid) return err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
+            staged.push({ del: `${d.uid}/${d.id}` });
+            continue;
+          }
+          const d = parseDocName(w.update.name);
+          const f = Object.fromEntries(Object.entries(w.update.fields).map(([k, v]) => [k, decodeValue(v)]));
+          const hasTransform = (w.updateTransforms || []).some((t) => t.fieldPath === 'serverUpdatedAt' && t.setToServerValue === 'REQUEST_TIME');
+          const existing = d ? docs.get(`${d.uid}/${d.id}`) : null;
+          if (!d || !rulesAllowWrite(uid, d.uid, existing, f, hasTransform)) {
+            return err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
+          }
+          staged.push({ key: `${d.uid}/${d.id}`, f });
+        }
+        for (const s of staged) {
+          if (s.del) docs.delete(s.del); else docs.set(s.key, { ...s.f, serverUpdatedAt: iso(tick()) });
+        }
+        return res(200, { writeResults: staged.map(() => ({})), commitTime: iso(clock) });
+      }
+
       if (path.endsWith('/documents:batchWrite')) {
         const status = [];
         for (const w of body.writes || []) {

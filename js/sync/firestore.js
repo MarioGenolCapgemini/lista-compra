@@ -100,19 +100,37 @@ export function createFirestore({ projectId, fetchFn } = {}) {
    * Un registro rechazado por las reglas (p. ej. obsoleto) NO hace fallar al resto.
    */
   async function pushChunk(uid, token, entries) {
-    const writes = entries.map(({ type, rec }) => ({
+    // `commit` (no `batchWrite`: este no admite a usuarios finales con reglas de seguridad) es atómico:
+    // si una escritura queda rechazada, se rechaza todo el lote. En ese caso se reintenta una a una
+    // para saber cuáles perdieron el conflicto sin penalizar a las demás.
+    const toWrite = ({ type, rec }) => ({
       update: { name: docPath(uid, rec.id), fields: encodeFields(toFields(type, rec)) },
       updateTransforms: [{ fieldPath: 'serverUpdatedAt', setToServerValue: 'REQUEST_TIME' }],
-    }));
-    const json = await request(`${root}:batchWrite`, token, { body: { writes } });
-    const statuses = (json && json.status) || [];
-    return entries.map((e, i) => {
-      const st = statuses[i] || {};
-      const code = st.code || 0;
-      if (code === 0) return { id: e.rec.id, ok: true };
-      const kind = code === 7 ? 'permission' : code === 8 ? 'quota' : 'server';
-      return { id: e.rec.id, ok: false, kind, message: st.message || '' };
     });
+    const commit = (list) => request(`${root}:commit`, token, { body: { writes: list.map(toWrite) } });
+    try {
+      await commit(entries);
+      return entries.map((e) => ({ id: e.rec.id, ok: true }));
+    } catch (e) {
+      if (!(e instanceof SyncError) || e.kind !== 'permission' || entries.length === 1) {
+        if (e instanceof SyncError && e.kind === 'permission') {
+          return [{ id: entries[0].rec.id, ok: false, kind: 'permission', message: e.message }];
+        }
+        throw e;
+      }
+    }
+    const results = [];
+    for (const entry of entries) {
+      try {
+        await commit([entry]);
+        results.push({ id: entry.rec.id, ok: true });
+      } catch (e) {
+        if (e instanceof SyncError && e.kind === 'permission') {
+          results.push({ id: entry.rec.id, ok: false, kind: 'permission', message: e.message });
+        } else throw e;
+      }
+    }
+    return results;
   }
 
   /**
@@ -170,9 +188,7 @@ export function createFirestore({ projectId, fetchFn } = {}) {
     const { records } = await pull(uid, token, null);
     for (let i = 0; i < records.length; i += CHUNK) {
       const writes = records.slice(i, i + CHUNK).map((r) => ({ delete: docPath(uid, r.rec.id) }));
-      const json = await request(`${root}:batchWrite`, token, { body: { writes } });
-      const bad = ((json && json.status) || []).find((s) => s && s.code);
-      if (bad) throw new SyncError(bad.code === 7 ? 'permission' : 'server', bad.message || 'No se pudo borrar');
+      await request(`${root}:commit`, token, { body: { writes } });
     }
     return records.length;
   }
