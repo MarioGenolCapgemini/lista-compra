@@ -215,13 +215,14 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
         const e = chunk[idx];
         const snap = { id: e.rec.id, updatedAt: e.rec.updatedAt };
         if (r.ok) (e.type === 'list' ? clean.lists : clean.items).push(snap);
-        else if (r.kind === 'permission') lost.push(e);
+        else if (r.kind === 'permission') { e.serverMessage = r.message; lost.push(e); }
         else if (!firstError) firstError = new SyncError(r.kind, r.message);
       });
       store.markClean(clean);
       for (const e of lost) {
         if (!(await resolveLost(uid, token, e)) && !firstError) {
-          firstError = new SyncError('permission', MESSAGES.permission);
+          firstError = new SyncError('permission', MESSAGES.permission +
+            (e.serverMessage ? ` [Detalle: ${e.serverMessage}]` : ''));
         }
       }
     }
@@ -255,7 +256,7 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
       case 'network': setState('offline', MESSAGES.offline); break;
       case 'auth': sessionLost(MESSAGES.lost); break;
       case 'quota': setState('error', MESSAGES.quota); break;
-      case 'permission': setState('error', MESSAGES.permission); break;
+      case 'permission': setState('error', e.message && e.message.startsWith(MESSAGES.permission) ? e.message : MESSAGES.permission); break;
       default:
         if (!(e instanceof SyncError)) console.error(e);
         setState('error', MESSAGES.server);
