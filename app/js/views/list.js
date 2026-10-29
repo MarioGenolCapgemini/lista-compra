@@ -13,12 +13,14 @@ function itemHtml(i, justToggled) {
     '<label class="item-check">' +
     `<input type="checkbox" data-action="toggle"${i.done ? ' checked' : ''}>` +
     `<img class="item-icon" src="${iconUrl(iconFor(i.name))}" alt="" width="32" height="32" loading="lazy" decoding="async">` +
-    '<span class="item-text">' +
+    '</label>' +
+    `<button type="button" class="item-text" data-action="edit" aria-label="${escapeHtml(t('list.edit', { name: i.name }))}">` +
     `<span class="item-name">${name}</span>` +
     `<span class="item-qty">×${i.quantity}</span>` +
     (i.note ? `<span class="item-note">${escapeHtml(i.note)}</span>` : '') +
-    '</span></label>' +
-    `<button class="icon-btn" data-action="edit" aria-label="${escapeHtml(t('list.edit', { name: i.name }))}">${icon('edit')}</button>` +
+    '</button>' +
+    `<button class="icon-btn icon-btn--sm" data-action="qty-dec" aria-label="${escapeHtml(t('list.qtyDec', { name: i.name }))}"${i.quantity <= 1 ? ' disabled' : ''}>${icon('minus')}</button>` +
+    `<button class="icon-btn icon-btn--sm" data-action="qty-inc" aria-label="${escapeHtml(t('list.qtyInc', { name: i.name }))}">${icon('plus')}</button>` +
     `<button class="icon-btn" data-action="delete" aria-label="${escapeHtml(t('list.delete', { name: i.name }))}">${icon('trash')}</button>` +
     '</li>';
 }
@@ -143,6 +145,9 @@ export function mountList(root, { store, listId }) {
 
     if (action === 'delete' && id) {
       store.deleteItem(id); // inmediato, sin confirmación (spec §9)
+    } else if ((action === 'qty-inc' || action === 'qty-dec') && id) {
+      const item = store.getSortedItems(listId).find((i) => i.id === id);
+      if (item) store.updateItem(id, { quantity: item.quantity + (action === 'qty-inc' ? 1 : -1) });
     } else if (action === 'edit' && id) {
       const item = store.getSortedItems(listId).find((i) => i.id === id);
       if (!item) return;

@@ -1,6 +1,7 @@
 /* Mobile-first. Zonas táctiles >= 44px (NFR-001). Contraste AA en ambos temas (NFR-014).
-   Estilo «glassmorphism» (spec 003): superficies translúcidas con desenfoque SOLO en barras y
-   diálogos (AC11.9); tarjetas y productos son translúcidos sin desenfoque propio.
+   Estilo limpio y plano: fondo liso, tarjetas opacas con sombra suave, sin desenfoque ni
+   degradados de fondo. Misma paleta naranja/crema. Los nombres de variable --glass-* se
+   conservan por compatibilidad con tests/contrast.check.mjs, aunque ahora son colores opacos.
    Tema claro por defecto: sin atributo data-theme se ve claro (AC12.1, AC12.4).
    Los pares de color de texto/fondo se validan con tests/contrast.check.mjs: si cambias un
    valor de las variables de abajo, vuelve a ejecutarlo. */
@@ -8,16 +9,16 @@
 /* ---------- Tokens ---------- */
 
 :root {
-  --radius: 18px;
-  --radius-sm: 14px;
+  --radius: 16px;
+  --radius-sm: 12px;
   --tap: 48px;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #14100d;
-  --glow-1: rgba(249, 115, 22, .22);
-  --glow-2: rgba(234, 88, 12, .13);
+  --glow-1: rgba(249, 115, 22, 0);
+  --glow-2: rgba(234, 88, 12, 0);
   --text: #f5efe9;
   --muted: #d3c8be;
   --done: #c6baae;
@@ -29,11 +30,11 @@
   --danger-bg: #dc2626;
   --danger-text: #ffffff;
   --danger-ink: #fca5a5;
-  --glass: rgba(255, 255, 255, .07);       /* tarjetas y productos */
-  --glass-done: rgba(255, 255, 255, .035);
-  --glass-bar: rgba(30, 22, 17, .62);      /* barras (con desenfoque) */
-  --glass-dlg: rgba(34, 26, 20, .86);      /* diálogos (con desenfoque) */
-  --glass-border: rgba(255, 255, 255, .14);
+  --glass: #231a14;                        /* tarjetas y productos */
+  --glass-done: #1b1410;
+  --glass-bar: #1b1410;                    /* barras */
+  --glass-dlg: #2a2019;                    /* diálogos */
+  --glass-border: rgba(255, 255, 255, .08);
   --opaque-bar: #241b15;
   --opaque-card: #2a2019;
   --opaque-dlg: #2a2019;
@@ -46,7 +47,7 @@
   --error-bg: rgba(220, 38, 38, .25);
   --error-text: #fecaca;
   --focus: #fdba74;
-  --shadow: 0 10px 30px rgba(0, 0, 0, .40);
+  --shadow: 0 4px 16px rgba(0, 0, 0, .35);
   --backdrop: rgba(8, 5, 3, .60);
   --dot-off: #9c8d80;
 }
@@ -55,8 +56,8 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #fff7ed;
-  --glow-1: rgba(249, 115, 22, .26);
-  --glow-2: rgba(251, 191, 36, .22);
+  --glow-1: rgba(249, 115, 22, 0);
+  --glow-2: rgba(251, 191, 36, 0);
   --text: #2a1a0e;
   --muted: #6b4a33;
   --done: #6d5a4b;
@@ -68,11 +69,11 @@
   --danger-bg: #b91c1c;
   --danger-text: #ffffff;
   --danger-ink: #991b1b;
-  --glass: rgba(255, 255, 255, .66);
-  --glass-done: rgba(255, 255, 255, .40);
-  --glass-bar: rgba(255, 255, 255, .72);
-  --glass-dlg: rgba(255, 252, 247, .92);
-  --glass-border: rgba(154, 52, 18, .20);
+  --glass: #ffffff;
+  --glass-done: #fbf1e6;
+  --glass-bar: #ffffff;
+  --glass-dlg: #ffffff;
+  --glass-border: rgba(154, 52, 18, .10);
   --opaque-bar: #ffffff;
   --opaque-card: #ffffff;
   --opaque-dlg: #ffffff;
@@ -85,27 +86,9 @@
   --error-bg: #fee2e2;
   --error-text: #7f1d1d;
   --focus: #c2410c;
-  --shadow: 0 10px 28px rgba(154, 52, 18, .16);
+  --shadow: 0 4px 16px rgba(154, 52, 18, .10);
   --backdrop: rgba(42, 26, 14, .40);
   --dot-off: #8a7262;
-}
-
-/* Sin transparencia: superficies opacas (AC11.5). Misma especificidad que los temas y posterior. */
-@media (prefers-reduced-transparency: reduce) {
-  :root, :root[data-theme] {
-    --glass: var(--opaque-card);
-    --glass-done: var(--opaque-card);
-    --glass-bar: var(--opaque-bar);
-    --glass-dlg: var(--opaque-dlg);
-  }
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root, :root[data-theme] {
-    --glass: var(--opaque-card);
-    --glass-done: var(--opaque-card);
-    --glass-bar: var(--opaque-bar);
-    --glass-dlg: var(--opaque-dlg);
-  }
 }
 
 /* ---------- Base ---------- */
@@ -119,16 +102,7 @@ body {
   /* Sin fondo propio: el fondo (y los degradados de body::before) los pinta <html>. */
   color: var(--text);
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-/* Fondo con degradados: pseudo-elemento fijo, no se repinta al hacer scroll. */
-body::before {
-  content: "";
-  position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background:
-    radial-gradient(60% 45% at 12% -5%, var(--glow-1), transparent 70%),
-    radial-gradient(55% 40% at 105% 35%, var(--glow-2), transparent 70%),
-    radial-gradient(70% 40% at 20% 110%, var(--glow-2), transparent 70%);
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
@@ -145,45 +119,37 @@ body::before {
 
 [hidden] { display: none !important; }
 
-/* ---------- Barras (con desenfoque) ---------- */
+/* ---------- Barras ---------- */
 
 .topbar {
-  position: sticky; top: calc(8px + env(safe-area-inset-top)); z-index: 5;
+  position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 4px;
-  margin: calc(8px + env(safe-area-inset-top)) 10px 0;
-  padding: 6px 8px 6px 18px;
-  min-height: 56px;
+  padding: calc(8px + env(safe-area-inset-top)) 8px 8px 20px;
+  min-height: 64px;
   background: var(--glass-bar);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: 22px;
-  box-shadow: var(--shadow);
+  border-bottom: 1px solid var(--glass-border);
   color: var(--text);
 }
 .topbar h1 {
   flex: 1; margin: 0;
-  font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em;
+  font-size: 1.5rem; font-weight: 750; letter-spacing: -.02em;
   overflow-wrap: anywhere;
 }
 
 .addbar, .bottombar {
-  position: sticky; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 5;
-  margin: 0 10px calc(8px + env(safe-area-inset-bottom));
-  padding: 10px;
+  position: sticky; bottom: 0; z-index: 5;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
   background: var(--glass-bar);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: 24px;
-  box-shadow: var(--shadow);
+  border-top: 1px solid var(--glass-border);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, .06);
 }
 .addbar { display: grid; gap: 8px; }
 .addbar-row { display: flex; gap: 8px; }
 
 /* ---------- Contenido ---------- */
 
-.content { flex: 1; padding: 14px 12px 20px; }
+.content { flex: 1; padding: 16px 16px 24px; }
 
 .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
 .empty-title { font-size: 1.15rem; font-weight: 650; color: var(--text); margin: 0 0 4px; }
@@ -193,17 +159,17 @@ body::before {
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: var(--tap); padding: 0 20px;
-  border: 1px solid transparent; border-radius: var(--radius-sm);
+  border: 1px solid transparent; border-radius: 999px;
   font: inherit; font-weight: 650; cursor: pointer;
   transition: transform .15s ease, background-color .15s ease, box-shadow .15s ease;
 }
 .btn:active { transform: scale(.97); }
 .btn-primary {
   background: var(--btn-bg); color: var(--btn-text);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .btn-primary:hover { background: var(--btn-bg-hover); }
-.btn-ghost { background: var(--glass); color: var(--accent-text); border-color: var(--glass-border); }
+.btn-ghost { background: transparent; color: var(--accent-text); border-color: var(--input-border); }
 .btn-ghost:hover { border-color: var(--accent); }
 .btn-danger { background: var(--danger-bg); color: var(--danger-text); }
 .btn-block { width: 100%; }
@@ -231,15 +197,15 @@ body::before {
 
 /* ---------- Tarjetas de listas ---------- */
 
-.cards, .items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cards, .items { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 
 .card, .item {
   display: flex; align-items: center;
   background: var(--glass);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  padding-right: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .10);
+  padding-right: 6px;
+  box-shadow: var(--shadow);
 }
 .card-main {
   flex: 1; min-width: 0;
@@ -253,17 +219,34 @@ body::before {
 /* ---------- Productos ---------- */
 
 .item-check {
-  flex: 1; min-width: 0;
+  flex: none;
   display: flex; align-items: center; gap: 14px;
   min-height: 58px; padding: 6px 8px 6px 16px;
   cursor: pointer;
 }
 .item-check input[type="checkbox"] {
-  width: 28px; height: 28px; flex: none; margin: 0;
-  accent-color: var(--accent); cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; flex: none; margin: 0;
+  border: 2px solid var(--input-border); border-radius: 50%; background: transparent;
+  background-position: center; background-repeat: no-repeat; background-size: 16px;
+  cursor: pointer; transition: background-color .15s ease, border-color .15s ease;
 }
-.item-text { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
-.item-name { font-weight: 600; overflow-wrap: anywhere; }
+.item-check input[type="checkbox"]:checked {
+  background-color: var(--btn-bg); border-color: var(--btn-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+}
+:root[data-theme="dark"] .item-check input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a0f08' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+}
+.item-text {
+  flex: 1; min-width: 0; align-self: stretch;
+  display: flex; flex-wrap: wrap; align-items: center; align-content: center; column-gap: 8px;
+  padding: 6px 4px; border: 0; background: transparent; color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.icon-btn--sm { width: 36px; height: 36px; }
+.icon-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+.item-name { font-weight: 600; font-size: 1.05rem; overflow-wrap: anywhere; }
 .item-qty {
   font-size: .85rem; font-weight: 650; color: var(--chip-text);
   background: var(--chip-bg); border-radius: 999px; padding: 0 9px;
@@ -272,7 +255,7 @@ body::before {
 
 /* Comprados: tachado + atenuado y al final (AC1.3). La decoración se aplica a cada span
    para que no dependa de la propagación entre elementos. */
-.item.done { background: var(--glass-done); }
+.item.done { background: var(--glass-done); box-shadow: none; }
 .item.done .item-name,
 .item.done .item-qty,
 .item.done .item-note {
@@ -285,22 +268,20 @@ body::before {
 
 .input {
   flex: 1; min-width: 0; min-height: var(--tap);
-  padding: 0 14px;
-  border: 1px solid var(--input-border); border-radius: var(--radius-sm);
+  padding: 0 18px;
+  border: 1px solid var(--input-border); border-radius: 999px;
   background: var(--input-bg); color: var(--text);
   font: inherit; /* 16px evita el zoom automático en iOS */
 }
 .input::placeholder { color: var(--muted); opacity: 1; }
 .input-qty { flex: 0 0 84px; text-align: center; }
 
-/* ---------- Diálogos (con desenfoque) ---------- */
+/* ---------- Diálogos ---------- */
 
 .dlg {
   width: min(92vw, 420px);
-  border: 1px solid var(--glass-border); border-radius: 26px; padding: 22px;
+  border: 1px solid var(--glass-border); border-radius: 24px; padding: 24px;
   background: var(--glass-dlg);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
   color: var(--text);
   box-shadow: var(--shadow);
 }
@@ -443,7 +424,6 @@ body::before {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 6px);
   list-style: none; margin: 0; padding: 6px;
   background: var(--glass-bar); border: 1px solid var(--glass-border); border-radius: 18px;
-  -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
   box-shadow: var(--shadow);
 }
 .suggest li {
@@ -465,8 +445,7 @@ body::before {
   height: min(82dvh, 720px); max-width: 640px; margin: 0 auto;
   display: flex; flex-direction: column; gap: 8px; padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
   background: var(--glass-bar); color: var(--text);
-  -webkit-backdrop-filter: blur(22px) saturate(140%); backdrop-filter: blur(22px) saturate(140%);
-  border: 1px solid var(--glass-border); border-radius: 26px 26px 0 0; box-shadow: var(--shadow);
+  border: 1px solid var(--glass-border); border-radius: 24px 24px 0 0; box-shadow: var(--shadow);
   transform: translateY(var(--sheet-y)); visibility: hidden;
   transition: transform .32s cubic-bezier(.22, 1, .36, 1), visibility 0s .32s;
   will-change: transform; overscroll-behavior: contain;
@@ -500,14 +479,9 @@ body::before {
   border-radius: 50%; background: var(--btn-bg); color: var(--btn-text);
 }
 .cat-badge .icon { width: 14px; height: 14px; }
-.about p { margin: 4px 0 8px; color: var(--muted); }
-.about a { color: var(--accent-text); }
 
 @media (prefers-reduced-motion: reduce) {
   .sheet, .sheet.open { transition: opacity .1s linear, visibility 0s; opacity: 0; }
   .sheet.open, .sheet.dragging { opacity: 1; }
   .sheet-backdrop { transition: none; }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .sheet, .suggest { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }

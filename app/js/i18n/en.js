@@ -53,6 +53,8 @@ export default {
   'list.clearDone': 'Clear bought ({n})',
   'list.edit': 'Edit {name}',
   'list.delete': 'Delete {name}',
+  'list.qtyInc': 'Increase quantity of {name}',
+  'list.qtyDec': 'Decrease quantity of {name}',
 
   'settings.title': 'Settings',
   'settings.docTitle': 'Settings · Shopping list',
@@ -145,9 +147,6 @@ export default {
   'catalog.inList': 'in the list',
   'catalog.none': 'No results.',
   'catalog.addTyped': 'Add “{name}”',
-  'about.title': 'About',
-  'about.icons': 'Icons: Twemoji, © Twitter, Inc. and contributors (maintained by jdecked), licensed CC-BY 4.0.',
-  'about.link': 'View the Twemoji project',
 
   'seed.items': [
     'Milk', 'Eggs', 'Bread', 'Butter', 'Yoghurt', 'Cheese', 'Ham', 'Chicken', 'Minced meat',

@@ -56,6 +56,8 @@ export default {
   'list.clearDone': 'Borrar comprados ({n})',
   'list.edit': 'Editar {name}',
   'list.delete': 'Eliminar {name}',
+  'list.qtyInc': 'Más cantidad de {name}',
+  'list.qtyDec': 'Menos cantidad de {name}',
 
   'settings.title': 'Ajustes',
   'settings.docTitle': 'Ajustes · Lista de la compra',
@@ -148,9 +150,6 @@ export default {
   'catalog.inList': 'en la lista',
   'catalog.none': 'No hay resultados.',
   'catalog.addTyped': 'Añadir «{name}»',
-  'about.title': 'Acerca de',
-  'about.icons': 'Iconos: Twemoji, © Twitter, Inc. y colaboradores (mantenido por jdecked), con licencia CC-BY 4.0.',
-  'about.link': 'Ver el proyecto Twemoji',
 
   'seed.items': [
     'Leche', 'Huevos', 'Pan', 'Mantequilla', 'Yogures', 'Queso', 'Jamón cocido', 'Pollo', 'Carne picada',
