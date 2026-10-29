@@ -50,6 +50,7 @@
   --shadow: 0 4px 16px rgba(0, 0, 0, .35);
   --backdrop: rgba(8, 5, 3, .60);
   --dot-off: #9c8d80;
+  --pattern-opacity: .10;
 }
 
 :root,
@@ -89,6 +90,7 @@
   --shadow: 0 4px 16px rgba(154, 52, 18, .10);
   --backdrop: rgba(42, 26, 14, .40);
   --dot-off: #8a7262;
+  --pattern-opacity: .16;
 }
 
 /* ---------- Base ---------- */
@@ -103,6 +105,14 @@ body {
   color: var(--text);
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Fondo de iconos: baldosa SVG repetible (iconos Twemoji incrustados), muy tenue. */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url("../icons/bg-pattern.svg") center top / 320px 320px repeat;
+  opacity: var(--pattern-opacity);
 }
 
 #app {

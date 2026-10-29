@@ -2,7 +2,7 @@
 // IMPORTANTE: al cambiar cualquier archivo de la app, sube CACHE_VERSION
 // para que los usuarios reciban la nueva versión.
 
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const CACHE = 'lista-compra-' + CACHE_VERSION;
 
 const ASSETS = [
@@ -40,6 +40,7 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/bg-pattern.svg',
 ];
 
 // Iconos Twemoji (spec 004). Se precachean uno a uno y sin que un fallo rompa la instalación:
