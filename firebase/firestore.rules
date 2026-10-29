@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Reglas de seguridad de Cloud Firestore para la spec 002 (cuenta y sincronización).
+// Cada usuario solo puede leer y escribir lo que cuelga de users/{su uid}/records.
+// Las reglas aplican también la resolución de conflictos (ver specs/002-*/plan.md §5.2):
+//  - una escritura más antigua que la existente se rechaza (gana el cambio más reciente);
+//  - un registro borrado (deletedAt) no puede modificarse más: el borrado es definitivo;
+//  - la fecha del cliente no puede adelantarse más de 1 minuto respecto al servidor;
+//  - serverUpdatedAt lo fija el servidor (cursor de sincronización).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid}/records/{id} {
+
+      function owner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      function valid() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['type', 'listId', 'name', 'quantity', 'note', 'done',
+                                 'createdAt', 'clientUpdatedAt', 'deletedAt', 'serverUpdatedAt'])
+          && d.type in ['list', 'item']
+          && d.name is string && d.name.size() >= 1 && d.name.size() <= 100
+          && d.createdAt is int && d.clientUpdatedAt is int
+          && d.clientUpdatedAt <= request.time.toMillis() + 60000
+          && d.serverUpdatedAt is timestamp   // `== request.time` fue rechazado por Firestore real (2026-10-28)
+          && (d.type == 'list'
+              || (d.listId is string
+                  && d.quantity is int && d.quantity >= 1
+                  && d.note is string && d.note.size() <= 120
+                  && d.done is bool));
+      }
+
+      allow read: if owner();
+
+      allow create: if owner() && valid();
+
+      allow update: if owner() && valid()
+        && resource.data.get('deletedAt', null) == null
+        && (request.resource.data.clientUpdatedAt > resource.data.clientUpdatedAt
+            || request.resource.data.get('deletedAt', null) != null);
+
+      // Solo se usa al eliminar la cuenta.
+      allow delete: if owner();
+    }
+
+    // Todo lo demás, denegado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
