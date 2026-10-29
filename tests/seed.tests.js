@@ -5,7 +5,9 @@ import { createStore } from '../js/store.js';
 import { createAuth } from '../js/sync/auth.js';
 import { createFirestore } from '../js/sync/firestore.js';
 import { createEngine } from '../js/sync/engine.js';
-import { buildSeed, seedIfFirstRun, SEED_LIST_ID, SEED_TIME, seedItemId, SEED_FLAG } from '../js/seed.js';
+import {
+  buildSeed, seedIfFirstRun, seedForNewAccount, SEED_LIST_ID, SEED_TIME, seedItemId, SEED_FLAG,
+} from '../js/seed.js';
 import { setLang, raw } from '../js/i18n/index.js';
 import { createMemoryStorage } from './memory-storage.js';
 import { createFakeFirebase } from './fake-server.js';
@@ -21,20 +23,23 @@ async function boot({ storage = createMemoryStorage(), lang = 'es', signedIn = f
   return { store, storage, seeded };
 }
 
-function makeSyncClient(fake) {
+function makeSyncClient(fake, lang = 'es') {
   const storage = createMemoryStorage();
   const store = createStore({ clock: fake.now });
   const auth = createAuth({ apiKey: fake.apiKey, fetchFn: fake.fetch, now: fake.now });
   const firestore = createFirestore({ projectId: fake.projectId, fetchFn: fake.fetch });
-  const engine = createEngine({ store, storage, auth, firestore, now: fake.now, autoStart: false });
+  const engine = createEngine({
+    store, storage, auth, firestore, now: fake.now, autoStart: false,
+    onNewAccount: () => seedForNewAccount(store, lang), // igual que main.js (AC13.9)
+  });
   return { store, storage, engine, firestore };
 }
 
-async function syncClient(fake, lang) {
-  const c = makeSyncClient(fake);
+async function syncClient(fake, lang, { seed = true } = {}) {
+  const c = makeSyncClient(fake, lang);
   await c.store.init(c.storage);
   await c.engine.init();
-  c.seeded = await seedIfFirstRun({ store: c.store, storage: c.storage, lang, signedIn: c.engine.getState().signedIn });
+  if (seed) c.seeded = await seedIfFirstRun({ store: c.store, storage: c.storage, lang, signedIn: c.engine.getState().signedIn });
   await c.store.flush();
   return c;
 }
@@ -255,5 +260,105 @@ export function register(t) {
     const c = await syncClient(fake, 'en');
     await c.engine.signIn('ana@example.com', PW);
     assert.equal(c.store.getLists().length, 0);
+  });
+
+  // ---------- AC13.9: cuenta nueva ----------
+
+  const names = (c) => c.store.getLists().map((l) => l.name).sort();
+
+  t.test('AC13.9: una cuenta nueva en un móvil con otras listas recibe además la lista inicial, todo sincronizado', async () => {
+    const fake = createFakeFirebase();
+    const c = await syncClient(fake, 'es', { seed: false });
+    const l = c.store.addList('Mi lista');
+    c.store.addItem(l.id, { name: 'Pan' });
+    await c.engine.signUp('ana@example.com', PW);
+    assert.deepEqual(names(c), ['Compra básica', 'Mi lista']);
+    assert.equal(c.store.getItemCount(SEED_LIST_ID), 36);
+    assert.equal(c.store.countDirty(), 0, 'todo enviado');
+    assert.equal(fake.countDocs(fake.uidOf('ana@example.com')), 2 + 37, 'lista + 1 producto + lista inicial + 36 productos');
+  });
+
+  t.test('AC13.9: el caso del usuario: móvil ya usado (bandera puesta) y lista inicial borrada sin cuenta → la cuenta nueva la recibe', async () => {
+    const fake = createFakeFirebase();
+    const a = await syncClient(fake, 'es');                  // primer arranque: se crea
+    a.store.deleteList(SEED_LIST_ID);                         // sin cuenta: borrado físico
+    await a.store.flush();
+    // Reabrir la app en el mismo dispositivo: bandera puesta, sin datos
+    const store = createStore({ clock: fake.now });
+    await store.init(a.storage);
+    const engine = createEngine({
+      store, storage: a.storage, now: fake.now, autoStart: false,
+      auth: createAuth({ apiKey: fake.apiKey, fetchFn: fake.fetch, now: fake.now }),
+      firestore: createFirestore({ projectId: fake.projectId, fetchFn: fake.fetch }),
+      onNewAccount: () => seedForNewAccount(store, 'es'),
+    });
+    await engine.init();
+    assert.equal(await seedIfFirstRun({ store, storage: a.storage, lang: 'es' }), false, 'al arrancar no se recrea');
+    assert.equal(store.getLists().length, 0);
+    await engine.signUp('ana@example.com', PW);
+    assert.deepEqual(store.getLists().map((l) => l.name), ['Compra básica']);
+    assert.equal(store.getItemCount(SEED_LIST_ID), 36);
+    assert.equal(fake.countDocs(fake.uidOf('ana@example.com')), 37);
+  });
+
+  t.test('AC13.9: si el móvil ya tiene la lista inicial, la cuenta nueva no la duplica', async () => {
+    const fake = createFakeFirebase();
+    const c = await syncClient(fake, 'es');
+    assert.equal(c.store.getItemCount(SEED_LIST_ID), 36);
+    await c.engine.signUp('ana@example.com', PW);
+    assert.equal(c.store.getLists().length, 1);
+    assert.equal(c.store.getItemCount(SEED_LIST_ID), 36);
+    assert.equal(fake.countDocs(fake.uidOf('ana@example.com')), 37);
+  });
+
+  t.test('AC13.9: iniciar sesión en una cuenta existente NO añade la lista inicial', async () => {
+    const fake = createFakeFirebase();
+    const a = await syncClient(fake, 'es', { seed: false });
+    const l = a.store.addList('Solo esta');
+    await a.engine.signUp('ana@example.com', PW);              // a ya lleva la lista inicial por ser cuenta nueva
+    a.store.deleteList(SEED_LIST_ID);                          // y la borra, con sesión (lápida)
+    fake.advance(60000);
+    await a.engine.syncNow();
+    const b = await syncClient(fake, 'es', { seed: false });   // móvil vacío, nunca arrancado con lista inicial
+    await b.engine.signIn('ana@example.com', PW);
+    assert.deepEqual(names(b), ['Solo esta'], 'ni la lista inicial borrada ni otra nueva');
+    assert.ok(l);
+  });
+
+  t.test('AC13.9 + AC7.10: cuenta nueva sobre datos de otra cuenta: «descartar» deja solo la lista inicial', async () => {
+    const fake = createFakeFirebase();
+    const a = await syncClient(fake, 'es', { seed: false });
+    a.store.addList('De Ana');
+    await a.engine.signUp('ana@example.com', PW);
+    await a.engine.signOut({ keepLocal: true });
+    a.store.deleteList(SEED_LIST_ID);                          // sin sesión: queda fuera
+    const r = await a.engine.signUp('beto@example.com', PW);
+    assert.equal(r.decision, 'other-account');
+    assert.equal(fake.countDocs(fake.uidOf('beto@example.com')), 0, 'nada se sube antes de decidir');
+    await a.engine.resolveOtherAccount('discard');
+    assert.deepEqual(names(a), ['Compra básica']);
+    assert.equal(fake.countDocs(fake.uidOf('beto@example.com')), 37);
+  });
+
+  t.test('AC13.9 + AC7.10: cuenta nueva sobre datos de otra cuenta: «añadir» conserva esas listas y suma la inicial', async () => {
+    const fake = createFakeFirebase();
+    const a = await syncClient(fake, 'es', { seed: false });
+    a.store.addList('De Ana');
+    await a.engine.signUp('ana@example.com', PW);
+    await a.engine.signOut({ keepLocal: true });
+    a.store.deleteList(SEED_LIST_ID);
+    await a.engine.signUp('beto@example.com', PW);
+    await a.engine.resolveOtherAccount('merge');
+    assert.deepEqual(names(a), ['Compra básica', 'De Ana']);
+    assert.equal(a.store.getItemCount(SEED_LIST_ID), 36);
+    assert.equal(a.store.countDirty(), 0);
+  });
+
+  t.test('AC13.9: seedForNewAccount es idempotente', async () => {
+    const store = createStore();
+    await store.init(createMemoryStorage());
+    assert.equal(seedForNewAccount(store, 'en'), 37);
+    assert.equal(seedForNewAccount(store, 'en'), 0);
+    assert.equal(store.getLists()[0].name, 'Basic groceries');
   });
 }

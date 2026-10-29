@@ -121,6 +121,7 @@ Haz la prueba en el móvil real, con la app ya instalada o abierta desde GitHub 
 - [ ] AC13.3 Si borro la lista inicial y reabro la app, no vuelve.
 - [ ] AC13.4 En una instalación que ya tenía listas, no aparece ninguna lista nueva.
 - [ ] AC13.5 Si cambio el idioma después, los nombres ya creados no se traducen.
+- [ ] AC13.9 Al **crear una cuenta nueva** (aunque el móvil ya tuviera listas o hubieras borrado la lista inicial) aparece «Compra básica» con 36 productos y se sincroniza; iniciar sesión en una cuenta existente no la añade.
 - [ ] AC13.6 (con cuenta, dos dispositivos) Al iniciar sesión en un segundo dispositivo nuevo, queda una sola lista inicial, sin duplicados, y lo que ya había marcado se conserva.
 
 **US14 · Idioma**
@@ -140,3 +141,20 @@ Haz la prueba en el móvil real, con la app ya instalada o abierta desde GitHub 
 | Fecha | Dispositivo / navegador | Resultado | Notas |
 |---|---|---|---|
 | | | | |
+
+## Spec 004 · Catálogo e iconos (móvil real)
+
+Automáticas: `catalog.tests.js` (en `ui.test.html`). Manual:
+
+- [ ] AC16.1 Arrastro hacia arriba la barra de añadir (tirador) y la hoja sube siguiendo el dedo; suelto y termina con animación suave.
+- [ ] AC16.1a Un arrastre corto vuelve a cerrarse; uno largo o rápido la abre del todo.
+- [ ] AC16.1b Se cierra arrastrando hacia abajo, con la flecha, tocando el fondo y con Atrás.
+- [ ] AC16.1c Con teclado/lector, el tirador abre y cierra la hoja.
+- [ ] AC16.1d Con «reducir movimiento» no hay desplazamiento animado.
+- [ ] AC16.1e Escribir, desplazar la lista y tocar los campos no abre la hoja.
+- [ ] AC16.4/16.5 Tocar artículos añade sin cerrar; repetir no duplica; uno comprado vuelve a pendiente.
+- [ ] AC16.6/16.7 El buscador ignora acentos y mayúsculas; sin resultados ofrece añadir lo escrito.
+- [ ] AC17.x Sugerencias desde 2 letras, con icono; Intro sin elegir añade el texto tal cual.
+- [ ] AC18.x Todos los productos de la lista inicial muestran icono, en es y en; los desconocidos, el genérico.
+- [ ] AC19.1 Ajustes → «Acerca de» muestra la atribución.
+- [ ] AC16.10 Sin conexión (modo avión) todo funciona, iconos incluidos.

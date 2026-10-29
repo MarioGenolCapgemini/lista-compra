@@ -137,6 +137,18 @@ export default {
   'err.noSession': 'No session',
 
   'seed.listName': 'Basic groceries',
+  'catalog.title': 'Catalogue',
+  'catalog.open': 'Open catalogue',
+  'catalog.close': 'Close catalogue',
+  'catalog.search': 'Search the catalogue',
+  'catalog.all': 'All',
+  'catalog.inList': 'in the list',
+  'catalog.none': 'No results.',
+  'catalog.addTyped': 'Add “{name}”',
+  'about.title': 'About',
+  'about.icons': 'Icons: Twemoji, © Twitter, Inc. and contributors (maintained by jdecked), licensed CC-BY 4.0.',
+  'about.link': 'View the Twemoji project',
+
   'seed.items': [
     'Milk', 'Eggs', 'Bread', 'Butter', 'Yoghurt', 'Cheese', 'Ham', 'Chicken', 'Minced meat',
     'Fish', 'Rice', 'Pasta', 'Lentils and beans', 'Flour', 'Sugar', 'Salt', 'Olive oil', 'Tomato sauce',

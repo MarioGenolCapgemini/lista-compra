@@ -18,7 +18,7 @@ cd app
 python -m http.server 8000
 ```
 
-Abre `http://localhost:8000` (la app) o `http://localhost:8000/tests/store.test.html` y `.../tests/storage.test.html` (pruebas automáticas).
+Abre `http://localhost:8000` (la app) o `http://localhost:8000/tests/store.test.html`, `.../tests/storage.test.html`, `.../tests/sync.test.html` y `.../tests/ui.test.html` (pruebas automáticas). El contraste de colores se comprueba con `node app/tests/contrast.check.mjs`.
 
 Para probarla en el móvil durante el desarrollo, el Service Worker y la instalación exigen HTTPS (excepto `localhost`), así que lo más sencillo es desplegarla (ver abajo).
 
@@ -35,6 +35,12 @@ Para probarla en el móvil durante el desarrollo, el Service Worker y la instala
 ## Actualizar la app
 
 Si cambias cualquier archivo de `app/`, **sube `CACHE_VERSION` en `sw.js`** (por ejemplo `v1` → `v2`). Si no, los móviles seguirán sirviendo la versión antigua desde la caché.
+
+## Tema, idioma y lista inicial (spec 003)
+
+- **Tema:** claro por defecto; en *Ajustes* puedes elegir Oscuro, Claro o Según el sistema. **Idioma:** Español o English (se detecta el del móvil la primera vez). Ambas preferencias se guardan en cada dispositivo y no se sincronizan.
+- **Lista inicial:** en el primer arranque sin datos se crea «Compra básica» con 36 productos. Los usuarios que ya tenían datos no la reciben en ese arranque, pero **toda cuenta nueva que se cree sí la recibe** (una sola vez, sin duplicar). Para añadir un idioma: crea `js/i18n/<código>.js` con las mismas claves que `es.js` y regístralo en `LANGUAGES` (`js/i18n/index.js`); la prueba `ui.test.html` comprueba que no falte ninguna clave.
+- **Icono:** carrito con check, blanco sobre naranja (`app/icons/`). Si ya tenías la app instalada, el sistema puede conservar el icono antiguo: desinstálala y vuelve a instalarla.
 
 ## Cuenta y sincronización (opcional, spec 002)
 
@@ -54,3 +60,7 @@ Si `config.js` está vacío, no aparece ningún botón de cuenta.
 
 - Sin cuenta, los datos viven solo en el dispositivo (IndexedDB). Borrar los datos del sitio o desinstalar el navegador los elimina. Instalar la app reduce el riesgo de que el navegador los purgue.
 - La sincronización resuelve conflictos por registro completo (gana el cambio más reciente) y un borrado siempre prevalece.
+
+## Catálogo e iconos (spec 004)
+
+Arrastra hacia arriba la barra de añadir (tirador) para abrir el catálogo de 328 artículos en 14 categorías; al escribir aparecen sugerencias y cada producto muestra su icono, deducido de su nombre. Iconos: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0). Para incluirlos: `git clone --depth 1 https://github.com/jdecked/twemoji.git` y `node tools/copy-icons.mjs <ruta-del-clon>`.

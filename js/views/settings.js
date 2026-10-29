@@ -39,7 +39,11 @@ export function mountSettings(root, { settings, sync = null }) {
       ? `<a class="row-link" href="${ACCOUNT_HASH}"><strong>${escapeHtml(t('settings.account'))}</strong>` +
         `<span>${escapeHtml(t('settings.accountHint'))}</span></a>`
       : '') +
-    '</main>';
+    '<section class="setting about">' +
+    `<h2 class="setting-title">${escapeHtml(t('about.title'))}</h2>` +
+    `<p>${escapeHtml(t('about.icons'))}</p>` +
+    `<a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener noreferrer">${escapeHtml(t('about.link'))}</a>` +
+    '</section></main>';
 
   document.title = t('settings.docTitle');
 

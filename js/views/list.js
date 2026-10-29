@@ -2,13 +2,17 @@
 
 import { escapeHtml, icon, MAX_NOTE } from '../util.js';
 import { promptDialog, itemDialog } from './dialogs.js';
-import { t } from '../i18n/index.js';
+import { t, getLang } from '../i18n/index.js';
+import { iconFor, iconUrl, GENERIC, suggest, itemName } from '../catalog/index.js';
+import { addFromCatalog } from '../catalog/add.js';
+import { createCatalogSheet } from './catalog-sheet.js';
 
 function itemHtml(i, justToggled) {
   const name = escapeHtml(i.name);
   return `<li class="item${i.done ? ' done' : ''}${justToggled ? ' just-toggled' : ''}" data-id="${escapeHtml(i.id)}">` +
     '<label class="item-check">' +
     `<input type="checkbox" data-action="toggle"${i.done ? ' checked' : ''}>` +
+    `<img class="item-icon" src="${iconUrl(iconFor(i.name))}" alt="" width="32" height="32" loading="lazy" decoding="async">` +
     '<span class="item-text">' +
     `<span class="item-name">${name}</span>` +
     `<span class="item-qty">×${i.quantity}</span>` +
@@ -35,8 +39,10 @@ export function mountList(root, { store, listId }) {
     '<button id="clear-done" class="btn btn-ghost btn-block" data-action="clear-done" hidden></button>' +
     '</main>' +
     '<form id="add-form" class="addbar" autocomplete="off">' +
+    `<button type="button" class="grab" id="add-grab" aria-expanded="false" aria-label="${escapeHtml(t('catalog.open'))}"><span></span></button>` +
+    '<ul id="suggest" class="suggest" role="listbox" hidden></ul>' +
     '<div class="addbar-row">' +
-    `<input name="name" class="input" placeholder="${escapeHtml(t('list.add.placeholder'))}" aria-label="${escapeHtml(t('list.add.aria'))}" required maxlength="100" enterkeyhint="done">` +
+    `<input name="name" class="input" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest" placeholder="${escapeHtml(t('list.add.placeholder'))}" aria-label="${escapeHtml(t('list.add.aria'))}" required maxlength="100" enterkeyhint="done">` +
     `<button type="submit" class="btn btn-primary btn-square" aria-label="${escapeHtml(t('list.add.btn'))}">${icon('plus')}</button>` +
     '</div>' +
     '<div class="addbar-row">' +
@@ -50,6 +56,61 @@ export function mountList(root, { store, listId }) {
   const empty = $('#empty');
   const clearBtn = $('#clear-done');
   const form = $('#add-form');
+  const sheet = createCatalogSheet({
+    root, store, listId, signal,
+    grabEl: $('#add-grab'),
+    dragZones: [$('#add-grab'), form],
+  });
+  const nameInput = form.elements.name;
+  const suggestEl = $('#suggest');
+  let sugg = [];
+  let active = -1;
+
+  function renderSuggest() {
+    sugg = suggest(nameInput.value, getLang(), 6);
+    active = -1;
+    suggestEl.hidden = sugg.length === 0;
+    nameInput.setAttribute('aria-expanded', String(sugg.length > 0));
+    nameInput.removeAttribute('aria-activedescendant');
+    suggestEl.innerHTML = sugg.map((it, n) =>
+      `<li id="sg-${n}" role="option" aria-selected="false" data-n="${n}">` +
+      `<img src="${iconUrl(it.icon)}" alt="" width="28" height="28"><span>${escapeHtml(itemName(it, getLang()))}</span></li>`).join('');
+  }
+  function hideSuggest() { sugg = []; suggestEl.hidden = true; suggestEl.innerHTML = ''; nameInput.setAttribute('aria-expanded', 'false'); nameInput.removeAttribute('aria-activedescendant'); }
+  function setActive(n) {
+    active = n;
+    suggestEl.querySelectorAll('[role="option"]').forEach((li, k) => li.setAttribute('aria-selected', String(k === n)));
+    if (n >= 0) nameInput.setAttribute('aria-activedescendant', 'sg-' + n); else nameInput.removeAttribute('aria-activedescendant');
+  }
+  function pickSuggestion(n) {
+    const it = sugg[n]; if (!it) return;
+    const f = form.elements;
+    addFromCatalog(store, listId, it, getLang(), { quantity: f.quantity.value, note: f.note.value, allowDuplicate: true });
+    f.name.value = ''; f.note.value = ''; f.quantity.value = '1';
+    hideSuggest(); f.name.focus();
+  }
+  nameInput.addEventListener('input', renderSuggest, { signal });
+  nameInput.addEventListener('blur', hideSuggest, { signal });
+  nameInput.addEventListener('keydown', (e) => {
+    if (!sugg.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((active + 1) % sugg.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((active - 1 + sugg.length) % sugg.length); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pickSuggestion(active); }
+    else if (e.key === 'Escape') hideSuggest();
+  }, { signal });
+  suggestEl.addEventListener('mousedown', (e) => e.preventDefault(), { signal }); // no pierde el foco
+  suggestEl.addEventListener('pointerdown', (e) => e.preventDefault(), { signal });
+  suggestEl.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-n]');
+    if (li) pickSuggestion(Number(li.dataset.n));
+  }, { signal });
+
+  // Si un icono no carga se usa el genérico (caso límite de la spec).
+  root.addEventListener('error', (e) => {
+    const img = e.target;
+    if (img.tagName === 'IMG' && !img.dataset.fallback) { img.dataset.fallback = '1'; img.src = iconUrl(GENERIC); }
+  }, { capture: true, signal });
+
   let justToggledId = null; // para animar el tachado solo del producto que se acaba de marcar (AC11.3)
 
   function render() {
@@ -100,6 +161,7 @@ export function mountList(root, { store, listId }) {
   // Añadir producto (AC1.1, AC1.2, AC2.1, AC2.2)
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    hideSuggest();
     const f = form.elements;
     store.addItem(listId, { name: f.name.value, quantity: f.quantity.value, note: f.note.value });
     // Si el nombre solo tenía espacios, el store lo rechaza: se limpia el campo sin ruido.
@@ -112,5 +174,5 @@ export function mountList(root, { store, listId }) {
   const unsubscribe = store.subscribe(render);
   render();
 
-  return () => { ac.abort(); unsubscribe(); };
+  return () => { ac.abort(); unsubscribe(); sheet.destroy(); };
 }

@@ -10,8 +10,9 @@
     import { register as i18n } from './i18n.tests.js';
     import { register as settings } from './settings.tests.js';
     import { register as seed } from './seed.tests.js';
+    import { register as catalog } from './catalog.tests.js';
     const t = createRunner();
-    i18n(t); settings(t); seed(t);
+    i18n(t); settings(t); seed(t); catalog(t);
     renderResults(await t.run(), document.getElementById('out'));
   </script>
 </body>

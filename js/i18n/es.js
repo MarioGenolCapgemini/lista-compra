@@ -140,6 +140,18 @@ export default {
   'err.noSession': 'No hay sesión',
 
   'seed.listName': 'Compra básica',
+  'catalog.title': 'Catálogo',
+  'catalog.open': 'Abrir catálogo',
+  'catalog.close': 'Cerrar catálogo',
+  'catalog.search': 'Buscar en el catálogo',
+  'catalog.all': 'Todas',
+  'catalog.inList': 'en la lista',
+  'catalog.none': 'No hay resultados.',
+  'catalog.addTyped': 'Añadir «{name}»',
+  'about.title': 'Acerca de',
+  'about.icons': 'Iconos: Twemoji, © Twitter, Inc. y colaboradores (mantenido por jdecked), con licencia CC-BY 4.0.',
+  'about.link': 'Ver el proyecto Twemoji',
+
   'seed.items': [
     'Leche', 'Huevos', 'Pan', 'Mantequilla', 'Yogures', 'Queso', 'Jamón cocido', 'Pollo', 'Carne picada',
     'Pescado', 'Arroz', 'Pasta', 'Legumbres', 'Harina', 'Azúcar', 'Sal', 'Aceite de oliva', 'Tomate frito',
