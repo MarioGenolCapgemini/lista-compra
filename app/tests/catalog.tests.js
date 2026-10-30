@@ -19,9 +19,9 @@ async function newStore() {
 }
 
 export function register(t) {
-  t.test('catálogo: ~330 artículos en 14 categorías, sin nombres repetidos por idioma', () => {
+  t.test('catálogo: ~520 artículos en 14 categorías, sin nombres repetidos por idioma', () => {
     assert.equal(categories.length, 14);
-    assert.ok(items.length >= 300, 'al menos 300 artículos');
+    assert.ok(items.length >= 500, 'al menos 500 artículos');
     for (const l of ['es', 'en']) {
       const names = items.map((i) => normalize(i[l]));
       assert.equal(new Set(names).size, names.length, 'repetidos en ' + l);
@@ -71,7 +71,7 @@ export function register(t) {
     assert.equal(search('zzzzqq', 'es').length, 0);
   });
 
-  t.test('NFR-022: filtrar 330 artículos tarda < 100 ms', () => {
+  t.test('NFR-022: filtrar 520 artículos tarda < 100 ms', () => {
     const t0 = performance.now();
     for (let k = 0; k < 20; k++) search('a', 'es');
     assert.ok((performance.now() - t0) / 20 < 100);
@@ -120,7 +120,7 @@ export function register(t) {
     assert.equal(iconFor(store.getSortedItems(listId)[0].name), findByName('Leche').icon);
   });
 
-  t.test('datos: todos los iconos usados tienen código válido y hay unos 170 distintos', () => {
+  t.test('datos: todos los iconos usados tienen código válido y hay unos 180 distintos', () => {
     const codes = new Set(ITEMS.map((i) => i[3]));
     assert.ok(codes.size >= 120 && codes.size <= 200, 'distintos: ' + codes.size);
     assert.ok([...codes].every((c) => /^[0-9a-f]+(-[0-9a-f]+)*$/.test(c)));

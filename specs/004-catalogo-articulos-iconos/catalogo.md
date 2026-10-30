@@ -1,6 +1,6 @@
 # Anexo A · Catálogo propuesto (spec 004)
 
-328 artículos en 14 categorías. La columna «Icono» es el emoji del que se tomará el dibujo del conjunto elegido (Twemoji, aprobado). Los **sinónimos** (singular/plural, variantes) se definen en el plan.
+328 artículos en 14 categorías (propuesta original; el catálogo vigente, con 519 artículos tras la ampliación posterior, está en `app/js/catalog/data.js`). La columna «Icono» es el emoji del que se tomará el dibujo del conjunto elegido (Twemoji, aprobado). Los **sinónimos** (singular/plural, variantes) se definen en el plan.
 
 Los 36 productos de la lista inicial (spec 003) están todos incluidos, por su nombre o con un sinónimo («Jamón cocido» → Jamón), para que tengan icono (AC18.6).
 

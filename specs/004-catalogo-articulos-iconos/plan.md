@@ -4,7 +4,7 @@
 
 ## Decisiones
 
-- **Datos:** `app/js/catalog/data.js` (generado de `catalogo.md`): 14 categorías, 328 artículos `[categoría, es, en, código]` y mapa de sinónimos. Añadir un idioma = una columna más.
+- **Datos:** `app/js/catalog/data.js` (generado de `catalogo.md`): 14 categorías, 519 artículos `[categoría, es, en, código]` y mapa de sinónimos. Añadir un idioma = una columna más.
 - **Icono por nombre, sin guardarlo** (AC18.7): `findByName` normaliza (sin acentos/mayúsculas), prueba el nombre exacto y el plural plegado (`huevo`↔`huevos`) en es y en, y sinónimos. Sin cambios en esquema, reglas ni sincronización.
 - **Iconos:** Twemoji (CC-BY 4.0), un SVG por código en `app/icons/emoji/<código>.svg` (~158 distintos). Copiados con `tools/copy-icons.mjs` desde un clon hecho por el usuario (el entorno de trabajo no puede descargarlos). `<img loading="lazy">`, `alt=""`; si falla la carga se usa `1f3f7.svg` (genérico).
 - **Service worker:** `v8`; app shell con `addAll`; iconos con `cache.add` uno a uno y tolerantes a fallo, para que un icono ausente no rompa la instalación. Funciona sin conexión.

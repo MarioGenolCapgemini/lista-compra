@@ -63,4 +63,4 @@ Si `config.js` está vacío, no aparece ningún botón de cuenta.
 
 ## Catálogo e iconos (spec 004)
 
-Arrastra hacia arriba la barra de añadir (tirador) para abrir el catálogo de 328 artículos en 14 categorías; al escribir aparecen sugerencias y cada producto muestra su icono, deducido de su nombre. Iconos: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0). Para incluirlos: `git clone --depth 1 https://github.com/jdecked/twemoji.git` y `node tools/copy-icons.mjs <ruta-del-clon>`.
+Arrastra hacia arriba la barra de añadir (tirador) para abrir el catálogo de 519 artículos en 14 categorías; al escribir aparecen sugerencias y cada producto muestra su icono, deducido de su nombre. Iconos: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0). Para incluirlos: `git clone --depth 1 https://github.com/jdecked/twemoji.git` y `node tools/copy-icons.mjs <ruta-del-clon>`.

@@ -8,7 +8,7 @@
 
 Hoy, para añadir un producto hay que escribirlo entero. Esta spec añade:
 
-1. Un **catálogo de unos 330 artículos cotidianos** organizado en **14 categorías**, cada artículo con su **icono**, en español e inglés.
+1. Un **catálogo de unos 520 artículos cotidianos** organizado en **14 categorías**, cada artículo con su **icono**, en español e inglés.
 2. Un **selector de catálogo** para añadir varios artículos tocándolos, con buscador, que se **abre arrastrando hacia arriba la barra de añadir producto**, con una transición suave (como una hoja inferior).
 3. **Sugerencias al escribir** en la barra de añadir, con su icono.
 4. **Icono en cada producto de la lista**, incluidos los que el usuario escribe a mano si su nombre coincide con el catálogo.
@@ -93,7 +93,7 @@ Como usuario, quiero saber de dónde salen los iconos, y como propietario quiero
 
 ## 5. Requisitos funcionales
 
-- **FR-032** Catálogo de unos 330 artículos en 14 categorías, con nombres y sinónimos en español e inglés y un icono por artículo y por categoría (anexo A).
+- **FR-032** Catálogo de unos 520 artículos en 14 categorías, con nombres y sinónimos en español e inglés y un icono por artículo y por categoría (anexo A).
 - **FR-033** Selector de catálogo con categorías, buscador, alta con un toque y marca de «en la lista» (AC16.x), en forma de hoja inferior que se abre arrastrando la barra de añadir hacia arriba, con alternativa por botón (AC16.1–16.1e).
 - **FR-034** Sugerencias al escribir en la barra de añadir, sin hacerla obligatoria (AC17.x).
 - **FR-035** Icono por producto deducido de su nombre, con icono genérico de respaldo (AC18.x).
@@ -103,8 +103,8 @@ Como usuario, quiero saber de dónde salen los iconos, y como propietario quiero
 ## 6. Requisitos no funcionales
 
 - **NFR-020 Sin recursos externos:** los iconos se sirven desde la propia app (política de seguridad `img-src 'self'`), nunca desde un CDN (principio 7).
-- **NFR-021 Peso:** el conjunto completo de iconos (unos **170 dibujos distintos**, porque varios artículos comparten icono) no supera **600 KB** y cada icono **8 KB** (medido con Twemoji: 270 KB en total y 6,2 KB el mayor; el límite inicial de 3 KB era una estimación demasiado ajustada); los iconos no bloquean la primera pantalla.
-- **NFR-022 Rendimiento:** abrir el selector y filtrar con el buscador responde en menos de 100 ms con los ~330 artículos; una lista de 200 productos sigue siendo fluida (AC18.8). El arrastre de la hoja y su animación se mantienen **fluidos (sin tirones perceptibles)** en un móvil medio.
+- **NFR-021 Peso:** el conjunto completo de iconos (unos **180 dibujos distintos**, porque varios artículos comparten icono) no supera **600 KB** y cada icono **8 KB** (medido con Twemoji: 270 KB en total y 6,2 KB el mayor; el límite inicial de 3 KB era una estimación demasiado ajustada); los iconos no bloquean la primera pantalla.
+- **NFR-022 Rendimiento:** abrir el selector y filtrar con el buscador responde en menos de 100 ms con los ~520 artículos; una lista de 200 productos sigue siendo fluida (AC18.8). El arrastre de la hoja y su animación se mantienen **fluidos (sin tirones perceptibles)** en un móvil medio.
 - **NFR-027 Gesto táctil:** el arrastre funciona con dedo y con ratón; las zonas de agarre cumplen 44×44 px; el contenido de detrás no se desplaza mientras se arrastra la hoja.
 - **NFR-023 Accesibilidad:** zonas táctiles de al menos 44×44 px, foco visible, nombres accesibles en botones y sugerencias, iconos decorativos ocultos a los lectores de pantalla, y contraste del texto de las sugerencias y del selector conforme a la comprobación de las specs anteriores (≥ 4,5:1 en ambos temas).
 - **NFR-024 Idiomas:** todos los textos nuevos están en español e inglés; añadir un idioma sigue requiriendo solo un archivo de textos, ahora también con los nombres del catálogo (AC14.7).
