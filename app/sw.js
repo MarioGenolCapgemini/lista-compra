@@ -2,7 +2,7 @@
 // IMPORTANTE: al cambiar cualquier archivo de la app, sube CACHE_VERSION
 // para que los usuarios reciban la nueva versión.
 
-const CACHE_VERSION = 'v17';
+const CACHE_VERSION = 'v18';
 const CACHE = 'lista-compra-' + CACHE_VERSION;
 
 const ASSETS = [

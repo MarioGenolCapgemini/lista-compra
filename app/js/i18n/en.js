@@ -52,6 +52,8 @@ export default {
   'list.clearDone': 'Clear bought ({n})',
   'list.edit': 'Edit {name}',
   'list.delete': 'Delete {name}',
+  'list.addQtyInc': 'Increase quantity',
+  'list.addQtyDec': 'Decrease quantity',
   'list.qtyInc': 'Increase quantity of {name}',
   'list.qtyDec': 'Decrease quantity of {name}',
 

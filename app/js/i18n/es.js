@@ -55,6 +55,8 @@ export default {
   'list.clearDone': 'Borrar comprados ({n})',
   'list.edit': 'Editar {name}',
   'list.delete': 'Eliminar {name}',
+  'list.addQtyInc': 'Más cantidad',
+  'list.addQtyDec': 'Menos cantidad',
   'list.qtyInc': 'Más cantidad de {name}',
   'list.qtyDec': 'Menos cantidad de {name}',
 

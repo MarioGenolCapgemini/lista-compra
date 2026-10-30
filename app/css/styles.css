@@ -288,6 +288,13 @@ body::before {
 .input:focus-visible, .field input:focus-visible { outline: none; }
 .input::placeholder { color: var(--muted); opacity: 1; }
 .input-qty { flex: 0 0 84px; text-align: center; }
+/* Selector de cantidad del producto nuevo: − n +, con el mismo borde que los campos de texto. */
+.qty-step {
+  flex: none; display: flex; align-items: center; gap: 2px;
+  min-height: var(--tap); padding: 0 4px;
+  border: 3px solid var(--input-border); border-radius: 999px; background: var(--input-bg);
+}
+.qty-value { min-width: 2ch; text-align: center; font-weight: 650; font-variant-numeric: tabular-nums; }
 
 /* ---------- Diálogos ---------- */
 

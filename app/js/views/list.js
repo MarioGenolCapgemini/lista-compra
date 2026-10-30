@@ -57,7 +57,12 @@ export function mountList(root, { store, listId, sync = null, sharing = null, se
     `<button type="submit" class="btn btn-primary btn-square" aria-label="${escapeHtml(t('list.add.btn'))}">${icon('plus')}</button>` +
     '</div>' +
     '<div class="addbar-row">' +
-    `<input name="quantity" class="input input-qty" type="number" inputmode="numeric" min="1" step="1" value="1" aria-label="${escapeHtml(t('list.qty'))}">` +
+    `<div class="qty-step" role="group" aria-label="${escapeHtml(t('list.qty'))}">` +
+    `<button type="button" class="icon-btn icon-btn--sm" id="qty-dec" data-action="add-qty-dec" aria-label="${escapeHtml(t('list.addQtyDec'))}" disabled>${icon('minus')}</button>` +
+    '<output id="qty-shown" class="qty-value" aria-live="polite">1</output>' +
+    '<input type="hidden" name="quantity" value="1">' +
+    `<button type="button" class="icon-btn icon-btn--sm" id="qty-inc" data-action="add-qty-inc" aria-label="${escapeHtml(t('list.addQtyInc'))}">${icon('plus')}</button>` +
+    '</div>' +
     `<input name="note" class="input" placeholder="${escapeHtml(t('list.note.placeholder'))}" aria-label="${escapeHtml(t('list.note.aria'))}" maxlength="${MAX_NOTE}">` +
     '</div></form>';
 
@@ -76,6 +81,18 @@ export function mountList(root, { store, listId, sync = null, sharing = null, se
     dragZones: [$('#add-grab'), form],
   });
   const nameInput = form.elements.product;
+
+  // Cantidad del producto que se va a añadir: botones − y + (mínimo 1, máximo 99).
+  const qtyShown = $('#qty-shown');
+  const qtyDec = $('#qty-dec');
+  const qtyInc = $('#qty-inc');
+  function setQty(n) {
+    const v = Math.min(99, Math.max(1, Math.floor(Number(n)) || 1));
+    form.elements.quantity.value = String(v);
+    qtyShown.textContent = String(v);
+    qtyDec.disabled = v <= 1;
+    qtyInc.disabled = v >= 99;
+  }
   const suggestEl = $('#suggest');
   let sugg = [];
   let active = -1;
@@ -100,7 +117,7 @@ export function mountList(root, { store, listId, sync = null, sharing = null, se
     const it = sugg[n]; if (!it) return;
     const f = form.elements;
     addFromCatalog(store, listId, it, getLang(), { quantity: f.quantity.value, note: f.note.value, allowDuplicate: true });
-    f.product.value = ''; f.note.value = ''; f.quantity.value = '1';
+    f.product.value = ''; f.note.value = ''; setQty(1);
     hideSuggest(); f.product.focus();
   }
   nameInput.addEventListener('input', renderSuggest, { signal });
@@ -161,7 +178,9 @@ export function mountList(root, { store, listId, sync = null, sharing = null, se
     const li = btn.closest('li[data-id]');
     const id = li ? li.dataset.id : null;
 
-    if (action === 'delete' && id) {
+    if (action === 'add-qty-dec' || action === 'add-qty-inc') {
+      setQty(Number(form.elements.quantity.value) + (action === 'add-qty-inc' ? 1 : -1));
+    } else if (action === 'delete' && id) {
       store.deleteItem(id); // inmediato, sin confirmación (spec §9)
     } else if ((action === 'qty-inc' || action === 'qty-dec') && id) {
       const item = store.getSortedItems(listId).find((i) => i.id === id);
@@ -197,7 +216,7 @@ export function mountList(root, { store, listId, sync = null, sharing = null, se
     // Si el nombre solo tenía espacios, el store lo rechaza: se limpia el campo sin ruido.
     f.product.value = '';
     f.note.value = '';
-    f.quantity.value = '1';
+    setQty(1);
     f.product.focus();
   }, { signal });
 

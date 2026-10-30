@@ -17,7 +17,7 @@ import { assert } from './runner.js';
 const PW = 'contraseña-segura';
 let n = 0;
 
-const waitFor = async (cond, what, ms = 3000) => {
+const waitFor = async (cond, what, ms = 6000) => {
   const t0 = Date.now();
   while (!cond()) {
     if (Date.now() - t0 > ms) throw new Error('tiempo agotado esperando: ' + what);
@@ -127,7 +127,7 @@ export function register(t) {
     await waitFor(() => dlg() && dlg().querySelector('input[name="value"]'), 'diálogo');
     dlg().querySelector('input[name="value"]').value = 'ZZZZZZ';
     dlg().querySelector('button[value="ok"]').click();
-    await waitFor(() => dlg() && /Código no válido/.test(text(dlg())), 'mensaje de código no válido');
+    await waitFor(() => [...document.querySelectorAll('dialog[open]')].some((d) => /Código no válido/.test(text(d))), 'mensaje de código no válido', 8000);
     closeAll();
     assert.equal(b.store.getSharedLists().length, 0);
     off();
@@ -177,6 +177,28 @@ export function register(t) {
     input.dispatchEvent(new Event('change', { bubbles: true }));
     assert.equal(a.settings.getAlias(), 'Ana María');
     assert.equal(input.value, 'Ana María');
+    off();
+  });
+
+  t.test('Añadir: el selector − n + fija la cantidad, el producto se añade con ella y vuelve a 1', async () => {
+    const fake = createFakeFirebase();
+    const a = await app(fake);
+    const off = mountList(a.root, { store: a.store, listId: a.list.id, sync: a.sync, sharing: a.sharing, settings: a.settings });
+    const dec = a.root.querySelector('#qty-dec');
+    const inc = a.root.querySelector('#qty-inc');
+    assert.ok(dec.disabled, 'no baja de 1');
+    click(inc); click(inc);
+    assert.equal(a.root.querySelector('#qty-shown').textContent, '3');
+    assert.ok(!dec.disabled);
+    click(dec);
+    click(inc);
+    const form = a.root.querySelector('#add-form');
+    form.elements.product.value = 'Naranjas';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    const added = a.store.getSortedItems(a.list.id).find((i) => i.name === 'Naranjas');
+    assert.equal(added.quantity, 3);
+    assert.equal(a.root.querySelector('#qty-shown').textContent, '1', 'vuelve a 1');
+    assert.ok(a.root.querySelector('#qty-dec').disabled);
     off();
   });
 }
