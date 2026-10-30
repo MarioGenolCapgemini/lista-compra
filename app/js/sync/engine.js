@@ -12,6 +12,8 @@ import { CHUNK } from './firestore.js';
 export const OVERLAP_MS = 10 * 1000;                     // solape del cursor
 export const TOMBSTONE_MAX_AGE = 30 * 24 * 3600 * 1000; // lápidas ya enviadas se purgan a los 30 días
 
+const SHARED_POLL_ACTIVE = 10000;   // listas compartidas (spec 005, NFR-028): más lento que el espacio privado
+const SHARED_POLL_QUIET = 30000;
 const POLL_ACTIVE = 5000;    // sondeo con la app visible
 const POLL_QUIET = 15000;    // tras 2 minutos sin cambios
 const QUIET_AFTER = 120000;
@@ -28,7 +30,8 @@ export const MESSAGES = {
 };
 
 export function createEngine({ store, storage, auth, firestore, now = Date.now, autoStart = true, onNewAccount = null }) {
-  let meta = null;              // { userId, email, cursor, lastActivity } (la sesión vive en `mgr`)
+  let meta = null;              // { userId, email, cursor, sharedCursors, lastActivity } (la sesión vive en `mgr`)
+  const lastSharedPull = new Map(); // listId -> instante de la última lectura (limita el sondeo)
   let status = 'off';
   let message = '';
   let lastSync = null;
@@ -51,7 +54,7 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     const doc = meta
       ? {
         userId: meta.userId ?? null, email: meta.email ?? null,
-        cursor: meta.cursor ?? null, lastActivity: meta.lastActivity ?? null,
+        cursor: meta.cursor ?? null, sharedCursors: meta.sharedCursors ?? {}, lastActivity: meta.lastActivity ?? null,
         session: s ? { idToken: s.idToken, refreshToken: s.refreshToken, expiresAt: s.expiresAt } : null,
       }
       : null;
@@ -138,8 +141,10 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     meta = {
       userId: s.userId, email: s.email,
       cursor: newOwner ? null : (meta ? meta.cursor : null),
+      sharedCursors: newOwner ? {} : (meta && meta.sharedCursors) || {},
       lastActivity: now(),
     };
+    lastSharedPull.clear();
     mgr.set(s);
     // Cuenta recién creada: recibe la lista inicial (spec 003, AC13.9), antes de subir todo.
     if (isNewAccount && onNewAccount) {
@@ -174,11 +179,30 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     setState('off');
   }
 
+  /**
+   * Antes de eliminar la cuenta (AC25.2, AC25.3): las listas que poseo se borran para todos y en las
+   * demás dejo de ser miembro, así no quedan datos míos ni listas huérfanas.
+   */
+  async function leaveAllShared(uid, token) {
+    for (const l of store.getSharedLists()) {
+      if (l.removed) continue;
+      if (l.ownerUid === uid) {
+        store.deleteList(l.id);
+        const groups = store.getDirtyBySpace();
+        if (groups.has(l.id)) await pushSpace({ shared: l.id }, token, groups.get(l.id));
+        await cleanupDeletedShared(uid, token, l.id, l);
+      } else {
+        try { await firestore.removeMember(token, l.id, uid); } catch (_) { /* ya no era miembro */ }
+      }
+    }
+  }
+
   /** Elimina la cuenta y todos sus datos en la nube. (AC10.x) */
   async function deleteAccount({ password, keepLocal = true } = {}) {
     if (!meta || !meta.email) throw new SyncError('validation', 'No hay ninguna cuenta activa.');
     if (!password) throw new SyncError('validation', 'Escribe tu contraseña para confirmar.');
     const s = await auth.signIn(meta.email, password); // token reciente y comprobación de la contraseña
+    await leaveAllShared(s.userId, s.idToken);
     await firestore.deleteAll(s.userId, s.idToken);
     await auth.deleteAccount(s.idToken);
     stop();
@@ -191,13 +215,15 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
   }
 
   // ---- Sincronización ----
-  async function resolveLost(uid, token, entry) {
-    const doc = await firestore.getRecord(uid, token, entry.rec.id);
+  // Un «espacio» es el privado (uid) o una lista compartida ({ shared: listId }).
+
+  async function resolveLost(space, token, entry) {
+    const doc = await firestore.getRecord(space, token, entry.rec.id);
     if (!doc) return false;
     if (doc.rec.updatedAt >= entry.rec.updatedAt || doc.rec.deletedAt != null) {
       // El local perdió el conflicto (o ya estaba enviado): gana el remoto.
       store.applyRemote({
-        lists: doc.type === 'list' ? [doc.rec] : [],
+        lists: doc.type === 'list' ? [sharedRec(space, doc.rec)] : [],
         items: doc.type === 'item' ? [doc.rec] : [],
       });
       const snap = [{ id: entry.rec.id, updatedAt: entry.rec.updatedAt }];
@@ -207,16 +233,18 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     return false; // remoto más antiguo y aun así rechazado: no es un conflicto, es un error de reglas
   }
 
-  async function pushDirty(uid, token) {
-    const dirty = store.getDirty();
+  // Los registros de lista que llegan de un espacio compartido llevan la marca de compartida.
+  const sharedRec = (space, rec) => (typeof space === 'string' ? rec : { ...rec, shared: 1 });
+
+  async function pushSpace(space, token, data) {
     const entries = [
-      ...dirty.lists.map((rec) => ({ type: 'list', rec })),
-      ...dirty.items.map((rec) => ({ type: 'item', rec })),
+      ...data.lists.map((rec) => ({ type: 'list', rec })),
+      ...data.items.map((rec) => ({ type: 'item', rec })),
     ];
     let firstError = null;
     for (let i = 0; i < entries.length; i += CHUNK) {
       const chunk = entries.slice(i, i + CHUNK);
-      const results = await firestore.pushChunk(uid, token, chunk);
+      const results = await firestore.pushChunk(space, token, chunk);
       const clean = { lists: [], items: [] };
       const lost = [];
       results.forEach((r, idx) => {
@@ -228,7 +256,7 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
       });
       store.markClean(clean);
       for (const e of lost) {
-        if (!(await resolveLost(uid, token, e)) && !firstError) {
+        if (!(await resolveLost(space, token, e)) && !firstError) {
           firstError = new SyncError('permission', MESSAGES.permission +
             (e.serverMessage ? ` [Detalle: ${e.serverMessage}]` : ''));
         }
@@ -237,6 +265,41 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     if (firstError) throw firstError;
   }
 
+  /** El propietario borró la lista compartida: se libera su código y su puntero (best effort). */
+  async function cleanupDeletedShared(uid, token, listId, listRec) {
+    try {
+      const head = await firestore.getShared(token, listId);
+      if (head && head.ownerUid === uid && head.code) await firestore.deleteCode(token, head.code);
+      await firestore.tombstoneLink(uid, token, { listId, name: listRec.name, now: now() });
+    } catch (_) { /* se reintentará al borrar de nuevo; no bloquea la sincronización */ }
+  }
+
+  async function pushDirty(uid, token) {
+    const groups = store.getDirtyBySpace();
+    const spaces = [...groups.keys()].sort((a, b) => (a === 'private' ? -1 : b === 'private' ? 1 : 0));
+    let firstError = null;
+    for (const key of spaces) {
+      const data = groups.get(key);
+      try {
+        await pushSpace(key === 'private' ? uid : { shared: key }, token, data);
+        if (key !== 'private') {
+          const gone = data.lists.find((l) => l.deletedAt != null);
+          if (gone && gone.ownerUid === uid) await cleanupDeletedShared(uid, token, key, gone);
+        }
+      } catch (e) {
+        if (key !== 'private' && e instanceof SyncError && e.kind === 'permission' && await lostAccess(uid, token, key)) continue;
+        if (!firstError) firstError = e;
+      }
+    }
+    if (firstError) throw firstError;
+  }
+
+  const advanceCursor = (cursor, maxServerUpdatedAt) => {
+    if (!maxServerUpdatedAt) return cursor;
+    const next = new Date(Date.parse(maxServerUpdatedAt) - OVERLAP_MS).toISOString();
+    return !cursor || Date.parse(next) > Date.parse(cursor) ? next : cursor;
+  };
+
   async function pullRemote(uid, token) {
     const { records, maxServerUpdatedAt } = await firestore.pull(uid, token, meta.cursor);
     if (records.length) {
@@ -244,12 +307,87 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
         lists: records.filter((r) => r.type === 'list').map((r) => r.rec),
         items: records.filter((r) => r.type === 'item').map((r) => r.rec),
       });
+      await applyLinks(uid, token, records.filter((r) => r.type === 'link').map((r) => r.rec));
       lastChange = now();
     }
-    if (maxServerUpdatedAt) {
-      const next = new Date(Date.parse(maxServerUpdatedAt) - OVERLAP_MS).toISOString();
-      if (!meta.cursor || Date.parse(next) > Date.parse(meta.cursor)) meta.cursor = next;
+    meta.cursor = advanceCursor(meta.cursor, maxServerUpdatedAt);
+  }
+
+  // ---- Listas compartidas (spec 005) ----
+
+  /** Punteros `link` del espacio privado: hacen aparecer (o desaparecer) listas compartidas en este dispositivo. */
+  async function applyLinks(uid, token, links) {
+    for (const link of links) {
+      const local = store.getSharedLists().find((l) => l.id === link.listId);
+      if (link.deletedAt != null) {
+        if (local && !local.removed) store.dropList(link.listId);  // salí o me quitaron desde otro dispositivo
+        continue;
+      }
+      if (local || store.hasListRecord(link.listId)) continue;
+      let head = null;
+      try {
+        head = await firestore.getShared(token, link.listId);
+      } catch (e) {
+        if (!(e instanceof SyncError) || e.kind !== 'permission') throw e;
+      }
+      if (!head) {
+        // Ya no soy miembro: el puntero sobra.
+        try { await firestore.tombstoneLink(uid, token, { listId: link.listId, name: link.name, now: now() }); } catch (_) { /* reintento al sincronizar */ }
+        continue;
+      }
+      resetSharedCursor(link.listId);
+      store.importShared({
+        list: { id: link.listId, name: link.name, ownerUid: head.ownerUid, createdAt: link.createdAt, updatedAt: link.updatedAt },
+      });
     }
+  }
+
+  /** Comprueba si me quitaron de la lista; si es así, se marca «sin acceso» y se deja de sincronizar. */
+  async function lostAccess(uid, token, listId) {
+    let member = null;
+    try {
+      member = await firestore.getMember(token, listId, uid);
+    } catch (e) {
+      if (e instanceof SyncError && e.kind === 'permission') member = null; else throw e;
+    }
+    if (member) return false; // sigo siendo miembro: era otro error
+    store.markRemoved(listId);
+    return true;
+  }
+
+  async function pullShared(uid, token, listId) {
+    const cursors = meta.sharedCursors || (meta.sharedCursors = {});
+    const { records, maxServerUpdatedAt } = await firestore.pull({ shared: listId }, token, cursors[listId] || null);
+    if (records.length) {
+      store.applyRemote({
+        lists: records.filter((r) => r.type === 'list').map((r) => ({ ...r.rec, shared: 1 })),
+        items: records.filter((r) => r.type === 'item').map((r) => r.rec),
+      });
+      lastChange = now();
+      const gone = records.find((r) => r.type === 'list' && r.rec.deletedAt != null);
+      if (gone) { // el propietario borró la lista: libero mi puntero
+        try { await firestore.tombstoneLink(uid, token, { listId, name: gone.rec.name, now: now() }); } catch (_) { /* best effort */ }
+      }
+    }
+    cursors[listId] = advanceCursor(cursors[listId] || null, maxServerUpdatedAt);
+  }
+
+  async function pullAllShared(uid, token, force) {
+    const gap = now() - lastChange > QUIET_AFTER ? SHARED_POLL_QUIET : SHARED_POLL_ACTIVE;
+    let firstError = null;
+    for (const l of store.getSharedLists()) {
+      if (l.removed) continue;
+      const last = lastSharedPull.get(l.id);
+      if (!force && last !== undefined && now() - last < gap) continue;
+      try {
+        await pullShared(uid, token, l.id);
+        lastSharedPull.set(l.id, now());
+      } catch (e) {
+        if (e instanceof SyncError && e.kind === 'permission' && await lostAccess(uid, token, l.id)) continue;
+        if (!firstError) firstError = e;
+      }
+    }
+    if (firstError) throw firstError;
   }
 
   function sessionLost(msg) {
@@ -271,7 +409,7 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     }
   }
 
-  async function syncOnce() {
+  async function syncOnce(force = false) {
     if (!mgr.get()) return false;
     if (running) { again = true; return false; }
     running = true;
@@ -281,6 +419,7 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
       const uid = mgr.get().userId;
       await pushDirty(uid, token);
       await pullRemote(uid, token);
+      await pullAllShared(uid, token, force);
       store.purgeTombstones(now() - TOMBSTONE_MAX_AGE);
       meta.lastActivity = now();
       await saveMeta();
@@ -292,8 +431,20 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     } finally {
       running = false;
     }
-    if (again && mgr.get()) { again = false; return syncOnce(); }
+    if (again && mgr.get()) { again = false; return syncOnce(force); }
     return status === 'idle';
+  }
+
+  /** Al (re)incorporar una lista compartida hay que leerla entera: se olvida el cursor anterior. */
+  function resetSharedCursor(listId) {
+    if (meta && meta.sharedCursors) delete meta.sharedCursors[listId];
+    lastSharedPull.delete(listId);
+  }
+
+  /** Sesión válida para las operaciones de compartición: `{ uid, token }`. */
+  async function session() {
+    if (!mgr.get()) throw new SyncError('auth', MESSAGES.lost);
+    return { uid: mgr.get().userId, token: await mgr.getIdToken() };
   }
 
   // ---- Programación (solo en el navegador) ----
@@ -344,7 +495,8 @@ export function createEngine({ store, storage, auth, firestore, now = Date.now, 
     init, start, stop, subscribe, getState,
     signUp, signIn, resolveOtherAccount, cancelOtherAccount, sendPasswordReset,
     signOut, deleteAccount,
-    syncNow: syncOnce,
+    syncNow: () => syncOnce(true),
+    session, resetSharedCursor,
     normalizeEmail,
   };
 }

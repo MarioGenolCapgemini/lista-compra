@@ -7,6 +7,12 @@
 //   dirty      1 si tiene cambios pendientes de enviar
 // Las lápidas solo se crean cuando los datos pertenecen a una cuenta
 // (`setTrackDeletes(true)`); sin cuenta se borra físicamente, como en la spec 001.
+//
+// Listas compartidas (spec 005): una lista lleva además
+//   shared     1 si es compartida (vive en `shared/{id}` del servidor)
+//   ownerUid   uid del propietario (solo listas compartidas)
+//   removed    1 si el propietario me quitó: se conserva hasta que el usuario decide qué hacer
+// y cada producto puede llevar `by` (alias de quien lo tocó por última vez).
 
 import { uuid, cleanName, cleanQuantity, cleanNote } from './util.js';
 
@@ -17,6 +23,7 @@ export function createStore({ clock = Date.now } = {}) {
   let persistent = true;   // false si IndexedDB no pudo abrirse
   let saveError = false;   // true si la última escritura falló
   let trackDeletes = false;
+  let alias = '';          // alias del usuario: firma los productos tocados en listas compartidas
   let queue = Promise.resolve();
   let last = 0;
   const subscribers = new Set();
@@ -29,14 +36,22 @@ export function createStore({ clock = Date.now } = {}) {
   }
 
   const live = (r) => r.deletedAt == null;
-  const normList = (l) => ({
-    id: l.id, name: l.name, createdAt: l.createdAt,
-    updatedAt: l.updatedAt ?? l.createdAt, deletedAt: l.deletedAt ?? null, dirty: l.dirty ? 1 : 0,
-  });
-  const normItem = (i) => ({
-    id: i.id, listId: i.listId, name: i.name, quantity: i.quantity, note: i.note ?? '', done: !!i.done,
-    createdAt: i.createdAt, updatedAt: i.updatedAt ?? i.createdAt, deletedAt: i.deletedAt ?? null, dirty: i.dirty ? 1 : 0,
-  });
+  const normList = (l) => {
+    const out = {
+      id: l.id, name: l.name, createdAt: l.createdAt,
+      updatedAt: l.updatedAt ?? l.createdAt, deletedAt: l.deletedAt ?? null, dirty: l.dirty ? 1 : 0,
+    };
+    if (l.shared) { out.shared = 1; out.ownerUid = l.ownerUid ?? null; if (l.removed) out.removed = 1; }
+    return out;
+  };
+  const normItem = (i) => {
+    const out = {
+      id: i.id, listId: i.listId, name: i.name, quantity: i.quantity, note: i.note ?? '', done: !!i.done,
+      createdAt: i.createdAt, updatedAt: i.updatedAt ?? i.createdAt, deletedAt: i.deletedAt ?? null, dirty: i.dirty ? 1 : 0,
+    };
+    if (i.by) out.by = i.by;
+    return out;
+  };
   const copy = (r) => ({ ...r });
 
   function notify() {
@@ -85,6 +100,10 @@ export function createStore({ clock = Date.now } = {}) {
   };
   const getItemCount = (listId) => items.filter((i) => i.listId === listId && live(i)).length;
   const getPendingCount = (listId) => items.filter((i) => i.listId === listId && live(i) && !i.done).length;
+
+  /** Listas compartidas vivas, con o sin acceso. */
+  const getSharedLists = () => lists.filter((l) => live(l) && l.shared).map(copy);
+  const sharedParent = (i) => { const l = lists.find((x) => x.id === i.listId); return l && l.shared ? l : null; };
 
   /** Pendientes primero; dentro de cada grupo, por fecha de creación. (FR-004) */
   function getSortedItems(listId) {
@@ -147,7 +166,8 @@ export function createStore({ clock = Date.now } = {}) {
 
   // ---- Productos ----
   function addItem(listId, { name, quantity = 1, note = '' } = {}) {
-    if (!findList(listId)) return null;
+    const parent = findList(listId);
+    if (!parent) return null;
     const n = cleanName(name);
     if (!n) return null;
     const t = now();
@@ -156,6 +176,7 @@ export function createStore({ clock = Date.now } = {}) {
       quantity: cleanQuantity(quantity), note: cleanNote(note),
       done: false, createdAt: t, updatedAt: t, deletedAt: null, dirty: 1,
     };
+    if (parent.shared && alias) item.by = alias;
     items.push(item);
     const snap = copy(item);
     persist((s) => s.putItem(snap));
@@ -173,6 +194,7 @@ export function createStore({ clock = Date.now } = {}) {
     }
     if ('quantity' in fields) item.quantity = cleanQuantity(fields.quantity);
     if ('note' in fields) item.note = cleanNote(fields.note);
+    if (alias && sharedParent(item)) item.by = alias;
     touch(item);
     const snap = copy(item);
     persist((s) => s.putItem(snap));
@@ -184,6 +206,7 @@ export function createStore({ clock = Date.now } = {}) {
     const item = findItem(id);
     if (!item) return false;
     item.done = !item.done;
+    if (alias && sharedParent(item)) item.by = alias;
     touch(item);
     const snap = copy(item);
     persist((s) => s.putItem(snap));
@@ -239,6 +262,25 @@ export function createStore({ clock = Date.now } = {}) {
   /** Registros con cambios pendientes, lápidas incluidas. */
   function getDirty() {
     return { lists: lists.filter((l) => l.dirty).map(copy), items: items.filter((i) => i.dirty).map(copy) };
+  }
+
+  /**
+   * Registros pendientes agrupados por espacio del servidor: 'private' o el id de cada lista
+   * compartida. Las listas «sin acceso» (`removed`) no se envían.
+   */
+  function getDirtyBySpace() {
+    const out = new Map();
+    const bucket = (k) => { if (!out.has(k)) out.set(k, { lists: [], items: [] }); return out.get(k); };
+    for (const l of lists) {
+      if (!l.dirty) continue;
+      if (l.shared) { if (!l.removed) bucket(l.id).lists.push(copy(l)); } else bucket('private').lists.push(copy(l));
+    }
+    for (const i of items) {
+      if (!i.dirty) continue;
+      const p = sharedParent(i);
+      if (p) { if (!p.removed) bucket(p.id).items.push(copy(i)); } else bucket('private').items.push(copy(i));
+    }
+    return out;
   }
 
   /**
@@ -324,6 +366,7 @@ export function createStore({ clock = Date.now } = {}) {
           listId: r.listId, name: r.name, quantity: r.quantity, note: r.note ?? '', done: !!r.done,
           updatedAt: r.updatedAt, dirty: 0,
         });
+        if (r.by) local.by = r.by; else delete local.by;
         changedItems.set(local.id, local);
       }
     }
@@ -343,6 +386,8 @@ export function createStore({ clock = Date.now } = {}) {
 
   /** ¿Hay algún registro, aunque sea una lápida? (AC13.4) */
   const hasAnyRecord = () => lists.length > 0 || items.length > 0;
+  /** ¿Existe una lista con ese id, aunque sea una lápida? */
+  const hasListRecord = (id) => lists.some((l) => l.id === id);
 
   /**
    * Inserta la lista inicial y sus productos de una vez, con una sola notificación.
@@ -395,6 +440,75 @@ export function createStore({ clock = Date.now } = {}) {
     return purgeTombstones(Infinity, { force: true });
   }
 
+  // ---- Listas compartidas (spec 005) ----
+
+  /** Alias con el que se firman los productos tocados en listas compartidas. */
+  function setAlias(value) { alias = typeof value === 'string' ? value.trim().slice(0, 24) : ''; }
+  const getAlias = () => alias;
+
+  /**
+   * Inserta una lista compartida recibida del servidor (unirse, o aparecer en otro dispositivo) y,
+   * si se indican, sus productos. Todo llega con `dirty: 0`. Idempotente por id.
+   */
+  function importShared({ list, items: its = [] } = {}) {
+    if (!list || lists.some((l) => l.id === list.id)) return false;
+    lists.push(normList({ ...list, shared: 1, dirty: 0 }));
+    lists.sort((a, b) => a.createdAt - b.createdAt);
+    for (const i of its) if (!items.some((x) => x.id === i.id)) items.push(normItem({ ...i, listId: list.id, dirty: 0 }));
+    last = Math.max(last, list.updatedAt || 0, list.createdAt || 0);
+    const ls = [copy(lists.find((l) => l.id === list.id))];
+    const is = items.filter((i) => i.listId === list.id).map(copy);
+    persist((st) => st.putRecords(ls, is));
+    notify();
+    return true;
+  }
+
+  /** El propietario cambió (transferencia) o se conoce por primera vez. */
+  function setListOwner(id, ownerUid) {
+    const l = lists.find((x) => x.id === id && x.shared);
+    if (!l || l.ownerUid === ownerUid) return false;
+    l.ownerUid = ownerUid;
+    persist((st) => st.putList(copy(l)));
+    notify();
+    return true;
+  }
+
+  /** Me quitaron de la lista: se conserva sin sincronizar hasta decidir (AC23.4). */
+  function markRemoved(id) {
+    const l = lists.find((x) => x.id === id && live(x) && x.shared);
+    if (!l || l.removed) return false;
+    l.removed = 1;
+    persist((st) => st.putList(copy(l)));
+    notify();
+    return true;
+  }
+
+  /** Pasa una lista compartida a privada local (la copia que se conserva al salir o ser quitado). */
+  function keepAsPrivate(id) {
+    const l = lists.find((x) => x.id === id && live(x) && x.shared);
+    if (!l) return false;
+    delete l.shared; delete l.ownerUid; delete l.removed;
+    l.updatedAt = now(); l.dirty = 1;
+    const touched = [];
+    for (const i of items) {
+      if (i.listId === id && live(i)) { delete i.by; i.updatedAt = now(); i.dirty = 1; touched.push(copy(i)); }
+    }
+    const snap = copy(l);
+    persist((st) => st.putRecords([snap], touched));
+    notify();
+    return true;
+  }
+
+  /** Borra una lista compartida solo en local (sin lápidas: el servidor ya no es suyo). */
+  function dropList(id) {
+    if (!lists.some((l) => l.id === id)) return false;
+    lists = lists.filter((l) => l.id !== id);
+    items = items.filter((i) => i.listId !== id);
+    persist((s) => s.deleteListCascade(id));
+    notify();
+    return true;
+  }
+
   function subscribe(fn) {
     subscribers.add(fn);
     return () => subscribers.delete(fn);
@@ -402,14 +516,16 @@ export function createStore({ clock = Date.now } = {}) {
 
   return {
     init, subscribe,
-    getLists, getList, getItemCount, getPendingCount, getSortedItems,
+    getLists, getList, getItemCount, getPendingCount, getSortedItems, getSharedLists,
     addList, renameList, deleteList,
     addItem, updateItem, toggleItem, deleteItem, clearDone,
     // sincronización
     setTrackDeletes, isTrackingDeletes, hasDirty, countDirty, countLive,
-    getDirty, markClean, markAllDirty, applyRemote, clearAllLocal, purgeTombstones, dropTombstones,
+    getDirty, getDirtyBySpace, markClean, markAllDirty, applyRemote, clearAllLocal, purgeTombstones, dropTombstones,
+    // listas compartidas
+    setAlias, getAlias, importShared, setListOwner, markRemoved, keepAsPrivate, dropList,
     // lista inicial
-    seedDefault, hasAnyRecord,
+    seedDefault, hasAnyRecord, hasListRecord,
     isPersistent: () => persistent,
     hasSaveError: () => saveError,
     flush: () => queue, // para pruebas

@@ -10,7 +10,7 @@ Principios que gobiernan todas las decisiones de spec, plan y código. Si una de
 4. **Simplicidad radical.** *(Enmendado en v1.1)* Sin frameworks ni dependencias salvo que la spec lo justifique. HTML + CSS + JavaScript (ES modules) por defecto. Para la sincronización se admite **un único servicio gestionado** (backend como servicio) con su SDK o API, sin servidores propios que mantener.
 5. **Spec como fuente de verdad.** No se escribe código que no trace a un requisito (FR-xxx) de la spec. Los cambios de comportamiento empiezan modificando la spec.
 6. **Verificable.** Cada historia de usuario tiene criterios de aceptación comprobables. Una tarea no está terminada hasta que se verifica contra ellos.
-7. **Privacidad por diseño.** *(Enmendado en v1.1)* Sin cuenta, ningún dato sale del dispositivo. Con cuenta, solo se envía lo imprescindible para sincronizar (correo electrónico, contraseña —que gestiona el proveedor de identidad y la app nunca almacena—, listas y productos), cifrado en tránsito y accesible únicamente por su propietario. Sin analítica, sin publicidad y sin compartir datos con terceros más allá del proveedor de sincronización. El usuario puede **cerrar sesión y borrar su cuenta y sus datos** en cualquier momento.
+7. **Privacidad por diseño.** *(Enmendado en v1.1)* Sin cuenta, ningún dato sale del dispositivo. Con cuenta, solo se envía lo imprescindible para sincronizar (correo electrónico, contraseña —que gestiona el proveedor de identidad y la app nunca almacena—, listas y productos), cifrado en tránsito y accesible únicamente por su propietario **y, en el caso de una lista compartida, por las personas con cuenta a las que el propietario da acceso mediante su código** *(enmendado en v1.3)*. Sin analítica, sin publicidad y sin compartir datos con terceros más allá del proveedor de sincronización. El usuario puede **cerrar sesión y borrar su cuenta y sus datos** en cualquier momento.
 8. **Coste cero para el usuario.** *(Añadido en v1.1)* El proyecto debe poder operarse en los planes gratuitos de los servicios elegidos. Si un servicio exige pago para seguir funcionando, la función afectada se degrada con elegancia (la app local sigue funcionando).
 
 ## Flujo de trabajo (SDD)
@@ -25,6 +25,7 @@ Cumplimiento: cualquier uso de la app por terceros que implique datos personales
 
 ## Historial de versiones
 
+- **v1.3 · 2026-10-30:** el principio 7 admite que una lista sea accesible, además de por su propietario, por las personas con cuenta que se unan con su código (spec 005). Las listas privadas siguen accesibles solo por su propietario.
 - **v1.2 · 2026-10-28:** el principio 7 menciona expresamente la contraseña, gestionada por el proveedor de identidad (acceso por correo y contraseña en la spec 002 con Firebase).
 - **v1.1 · 2026-10-28:** enmiendas a los principios 2, 4 y 7 y nuevo principio 8, para permitir cuentas y sincronización **opcionales** (spec 002). El modo local sin cuenta de la spec 001 no cambia.
 - **v1.0 · 2026-10-28:** versión inicial.

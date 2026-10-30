@@ -6,8 +6,9 @@ import { t, getLang } from '../i18n/index.js';
 import { iconFor, iconUrl, GENERIC, suggest, itemName } from '../catalog/index.js';
 import { addFromCatalog } from '../catalog/add.js';
 import { createCatalogSheet } from './catalog-sheet.js';
+import { openShareDialog, showError } from './share-sheet.js';
 
-function itemHtml(i, justToggled) {
+function itemHtml(i, justToggled, showBy) {
   const name = escapeHtml(i.name);
   return `<li class="item${i.done ? ' done' : ''}${justToggled ? ' just-toggled' : ''}" data-id="${escapeHtml(i.id)}">` +
     '<label class="item-check">' +
@@ -17,6 +18,7 @@ function itemHtml(i, justToggled) {
     `<button type="button" class="item-text" data-action="edit" aria-label="${escapeHtml(t('list.edit', { name: i.name }))}">` +
     `<span class="item-name">${name}</span>` +
     `<span class="item-qty">×${i.quantity}</span>` +
+    (showBy && i.by ? `<span class="item-by">${escapeHtml(t('list.by', { name: i.by }))}</span>` : '') +
     (i.note ? `<span class="item-note">${escapeHtml(i.note)}</span>` : '') +
     '</button>' +
     `<button class="icon-btn icon-btn--sm" data-action="qty-dec" aria-label="${escapeHtml(t('list.qtyDec', { name: i.name }))}"${i.quantity <= 1 ? ' disabled' : ''}>${icon('minus')}</button>` +
@@ -25,7 +27,7 @@ function itemHtml(i, justToggled) {
     '</li>';
 }
 
-export function mountList(root, { store, listId }) {
+export function mountList(root, { store, listId, sync = null, sharing = null, settings = null }) {
   const ac = new AbortController();
   const { signal } = ac;
 
@@ -33,9 +35,16 @@ export function mountList(root, { store, listId }) {
     '<header class="topbar">' +
     `<a class="icon-btn" href="#/" aria-label="${escapeHtml(t('common.back'))}">${icon('back')}</a>` +
     '<h1 id="list-title"></h1>' +
-    `<button class="icon-btn" data-action="rename-list" aria-label="${escapeHtml(t('list.rename'))}">${icon('edit')}</button>` +
+    `<button class="icon-btn" id="rename-btn" data-action="rename-list" aria-label="${escapeHtml(t('list.rename'))}">${icon('edit')}</button>` +
+    (sync ? `<button class="icon-btn" id="share-btn" data-action="share" aria-label="${escapeHtml(t('list.share'))}">${icon('share')}</button>` : '') +
     '</header>' +
     '<main class="content">' +
+    '<div id="removed" class="notice notice--stack" role="status" hidden>' +
+    `<strong>${escapeHtml(t('share.removed.title'))}</strong><span>${escapeHtml(t('share.removed.text'))}</span>` +
+    '<div class="notice-actions">' +
+    `<button type="button" class="btn btn-primary btn-small" data-action="removed-keep">${escapeHtml(t('share.removed.keep'))}</button>` +
+    `<button type="button" class="btn btn-ghost btn-small" data-action="removed-drop">${escapeHtml(t('share.removed.drop'))}</button>` +
+    '</div></div>' +
     '<ul id="items" class="items"></ul>' +
     `<div id="empty" class="empty" hidden><p class="empty-title">${escapeHtml(t('list.empty.title'))}</p><p>${escapeHtml(t('list.empty.text'))}</p></div>` +
     '<button id="clear-done" class="btn btn-ghost btn-block" data-action="clear-done" hidden></button>' +
@@ -57,6 +66,9 @@ export function mountList(root, { store, listId }) {
   const ul = $('#items');
   const empty = $('#empty');
   const clearBtn = $('#clear-done');
+  const renameBtn = $('#rename-btn');
+  const shareBtn = $('#share-btn');
+  const removedBox = $('#removed');
   const form = $('#add-form');
   const sheet = createCatalogSheet({
     root, store, listId, signal,
@@ -121,7 +133,13 @@ export function mountList(root, { store, listId }) {
     titleEl.textContent = list.name;
     document.title = t('list.docTitle', { name: list.name });
     const items = store.getSortedItems(listId);
-    ul.innerHTML = items.map((i) => itemHtml(i, i.id === justToggledId && i.done)).join('');
+    // Lista compartida (spec 005): solo el propietario la renombra; «sin acceso» no se edita ni se envía.
+    const isOwner = !list.shared || (!!sync && list.ownerUid === sync.getState().owner);
+    renameBtn.hidden = !isOwner || !!list.removed;
+    if (shareBtn) shareBtn.hidden = !!list.removed;
+    removedBox.hidden = !list.removed;
+    form.hidden = !!list.removed;
+    ul.innerHTML = items.map((i) => itemHtml(i, i.id === justToggledId && i.done, !!list.shared)).join('');
     justToggledId = null;
     empty.hidden = items.length > 0;
     const done = items.filter((i) => i.done).length;
@@ -153,6 +171,13 @@ export function mountList(root, { store, listId }) {
       if (!item) return;
       const data = await itemDialog(item);
       if (data) store.updateItem(id, { name: data.name, quantity: data.quantity, note: data.note });
+    } else if (action === 'share' && sync && sharing && settings) {
+      openShareDialog({ store, sync, sharing, settings, listId });
+    } else if ((action === 'removed-keep' || action === 'removed-drop') && sharing) {
+      try {
+        await sharing.resolveRemoved(listId, { keep: action === 'removed-keep' });
+        if (action === 'removed-drop') location.hash = '#/';
+      } catch (err) { await showError(err); }
     } else if (action === 'clear-done') {
       store.clearDone(listId);
     } else if (action === 'rename-list') {

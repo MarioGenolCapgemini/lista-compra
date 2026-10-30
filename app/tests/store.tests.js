@@ -418,4 +418,77 @@ export function register(t) {
     store.getSortedItems(l.id)[0].name = 'HACK';
     assert.equal(store.getSortedItems(l.id)[0].name, 'Pan');
   });
+
+  // ---------- Listas compartidas (spec 005) ----------
+
+  t.test('T404: sin listas compartidas todo va al espacio privado', async () => {
+    const { store } = await newStore();
+    const l = store.addList('Súper');
+    store.addItem(l.id, { name: 'Pan' });
+    const groups = store.getDirtyBySpace();
+    assert.deepEqual([...groups.keys()], ['private']);
+    assert.equal(groups.get('private').lists.length, 1);
+    assert.equal(groups.get('private').items.length, 1);
+    assert.deepEqual(store.getSharedLists(), []);
+  });
+
+  t.test('T404: los registros de una lista compartida se agrupan por su espacio y llevan el alias', async () => {
+    const { store } = await newStore();
+    store.setAlias('Ana');
+    store.importShared({ list: { id: 'S1', name: 'Fiesta', ownerUid: 'u1', createdAt: 1, updatedAt: 1 } });
+    const priv = store.addList('Privada');
+    store.addItem(priv.id, { name: 'Pan' });
+    const it = store.addItem('S1', { name: 'Globos' });
+    assert.equal(it.by, 'Ana');
+    assert.equal(store.getSortedItems(priv.id)[0].by, undefined, 'las privadas no llevan alias');
+    const groups = store.getDirtyBySpace();
+    assert.deepEqual([...groups.keys()].sort(), ['S1', 'private']);
+    assert.equal(groups.get('S1').items[0].name, 'Globos');
+    assert.equal(groups.get('private').items[0].name, 'Pan');
+  });
+
+  t.test('T404: importShared es idempotente y no deja nada pendiente', async () => {
+    const { store } = await newStore();
+    const list = { id: 'S1', name: 'Fiesta', ownerUid: 'u1', createdAt: 1, updatedAt: 1 };
+    assert.equal(store.importShared({ list }), true);
+    assert.equal(store.importShared({ list }), false);
+    assert.equal(store.getLists().length, 1);
+    assert.equal(store.getList('S1').shared, 1);
+    assert.equal(store.hasDirty(), false);
+    assert.equal(store.hasListRecord('S1'), true);
+  });
+
+  t.test('AC23.4: una lista «sin acceso» no se envía; guardarla la hace privada y pendiente de subir', async () => {
+    const { store } = await newStore();
+    store.importShared({ list: { id: 'S1', name: 'Fiesta', ownerUid: 'u1', createdAt: 1, updatedAt: 1 } });
+    store.addItem('S1', { name: 'Globos' });
+    store.markRemoved('S1');
+    assert.equal(store.getList('S1').removed, 1);
+    assert.equal(store.getDirtyBySpace().size, 0, 'nada que enviar a una lista sin acceso');
+    assert.equal(store.keepAsPrivate('S1'), true);
+    const mine = store.getList('S1');
+    assert.ok(!mine.shared && !mine.removed && !mine.ownerUid);
+    assert.deepEqual([...store.getDirtyBySpace().keys()], ['private']);
+    assert.equal(store.getSortedItems('S1')[0].by, undefined);
+  });
+
+  t.test('dropList borra una lista compartida solo en local, sin lápidas', async () => {
+    const { store, storage } = await newStore();
+    store.importShared({ list: { id: 'S1', name: 'Fiesta', ownerUid: 'u1', createdAt: 1, updatedAt: 1 } });
+    store.addItem('S1', { name: 'Globos' });
+    store.dropList('S1');
+    assert.equal(store.hasListRecord('S1'), false);
+    assert.equal(store.getSharedLists().length, 0);
+    await store.flush();
+    assert.ok(storage.calls.some(([n]) => n === 'deleteListCascade'));
+  });
+
+  t.test('applyRemote conserva el alias del producto y lo quita si deja de venir', async () => {
+    const { store } = await newStore();
+    store.importShared({ list: { id: 'S1', name: 'Fiesta', ownerUid: 'u1', createdAt: 1, updatedAt: 1 } });
+    store.applyRemote({ items: [{ id: 'i1', listId: 'S1', name: 'Globos', quantity: 1, note: '', done: false, createdAt: 2, updatedAt: 2, by: 'Bea' }] });
+    assert.equal(store.getSortedItems('S1')[0].by, 'Bea');
+    store.applyRemote({ items: [{ id: 'i1', listId: 'S1', name: 'Globos', quantity: 1, note: '', done: true, createdAt: 2, updatedAt: 3 }] });
+    assert.equal(store.getSortedItems('S1')[0].by, undefined);
+  });
 }

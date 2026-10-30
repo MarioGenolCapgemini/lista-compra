@@ -34,11 +34,12 @@ function openDialog(title, bodyHtml, okText, { danger = false } = {}) {
 }
 
 /** Pide un texto obligatorio (nombre de lista). Devuelve string o null. */
-export async function promptDialog({ title, label, value = '', submitText = t('common.save') }) {
+export async function promptDialog({ title, label, value = '', submitText = t('common.save'), message = '', maxLength = 80 }) {
   const r = await openDialog(
     title,
+    (message ? `<p class="dlg-msg">${escapeHtml(message)}</p>` : '') +
     `<label class="field"><span>${escapeHtml(label)}</span>` +
-    `<input name="value" required maxlength="80" autocomplete="off" value="${escapeHtml(value)}"></label>`,
+    `<input name="value" required maxlength="${maxLength}" autocomplete="off" value="${escapeHtml(value)}"></label>`,
     submitText,
   );
   return r ? r.value : null;

@@ -8,6 +8,13 @@ export const DEFAULT_THEME = 'light';                      // AC12.1
 export const THEME_COLORS = { dark: '#14100d', light: '#fff7ed' };
 export const KEY_THEME = 'lc.theme';
 export const KEY_LANG = 'lc.lang';
+export const KEY_ALIAS = 'lc.alias';             // alias para listas compartidas (spec 005, NFR-030)
+export const MAX_ALIAS = 24;
+
+/** Alias limpio: sin saltos de línea ni espacios repetidos, máximo 24 caracteres. */
+export function cleanAlias(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, MAX_ALIAS) : '';
+}
 
 /** Tema efectivo ('dark' | 'light') según la preferencia y el sistema. */
 export function resolveTheme(pref, systemDark) {
@@ -39,6 +46,7 @@ export function createSettings({ storage = null, getSystemDark = () => false, la
   const storedLang = read(KEY_LANG);
   let theme = THEMES.includes(storedTheme) ? storedTheme : DEFAULT_THEME;
   let lang = LANGUAGES[storedLang] ? storedLang : detectLang(languages);
+  let alias = cleanAlias(read(KEY_ALIAS) || '');
   const subs = new Set();
 
   const getResolvedTheme = () => resolveTheme(theme, getSystemDark());
@@ -78,14 +86,21 @@ export function createSettings({ storage = null, getSystemDark = () => false, la
     return true;
   }
 
+  function setAlias(value) {
+    alias = cleanAlias(value);
+    write(KEY_ALIAS, alias);
+    notify();
+    return alias;
+  }
+
   /** Para cuando el sistema cambia de tema y la preferencia es «Según el sistema». */
   function refreshSystem() {
     if (theme === 'system') { applyToDocument(); notify(); }
   }
 
   return {
-    getTheme: () => theme, getResolvedTheme, getLang: () => lang,
-    setTheme, setLang, apply, refreshSystem,
+    getTheme: () => theme, getResolvedTheme, getLang: () => lang, getAlias: () => alias,
+    setTheme, setLang, setAlias, apply, refreshSystem,
     subscribe(fn) { subs.add(fn); return () => subs.delete(fn); },
   };
 }

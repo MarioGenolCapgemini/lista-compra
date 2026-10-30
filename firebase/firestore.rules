@@ -1,49 +1,164 @@
 rules_version = '2';
 
-// Reglas de seguridad de Cloud Firestore para la spec 002 (cuenta y sincronización).
-// Cada usuario solo puede leer y escribir lo que cuelga de users/{su uid}/records.
+// Reglas de seguridad de Cloud Firestore para las specs 002 (cuenta y sincronización) y 005 (listas compartidas).
+//
+// Espacio privado: cada usuario solo puede leer y escribir lo que cuelga de users/{su uid}/records.
+// Listas compartidas (spec 005): shared/{lista} y sus subcolecciones, accesibles solo a sus miembros.
+//   shared/{l}                  cabecera: ownerUid, code, createdAt (la leen los miembros)
+//   shared/{l}/members/{uid}    miembros: alias, joinedAt, code (la prueba del código al unirse)
+//   shared/{l}/records/{id}     la lista (type 'list', solo la toca el propietario) y sus productos
+//   codes/{CODE}                vista previa de un código (listId, name, ownerAlias); solo `get`, nunca `list`
 // Las reglas aplican también la resolución de conflictos (ver specs/002-*/plan.md §5.2):
 //  - una escritura más antigua que la existente se rechaza (gana el cambio más reciente);
-//  - un registro borrado (deletedAt) no puede modificarse más: el borrado es definitivo;
+//  - un registro borrado (deletedAt) no puede modificarse más: el borrado es definitivo
+//    (salvo el puntero `link`, que se puede volver a crear al unirse de nuevo a una lista);
 //  - la fecha del cliente no puede adelantarse más de 1 minuto respecto al servidor;
 //  - serverUpdatedAt lo fija el servidor (cursor de sincronización).
+// Las escrituras que crean varios documentos a la vez (compartir una lista, unirse) usan getAfter/
+// existsAfter: miran el estado tras aplicar toda la petición, que es atómica.
+// Límite de miembros (10): lo comprueba el cliente; estas reglas no pueden contar documentos.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() { return request.auth != null; }
+
+    function sharedDoc(l) { return /databases/$(database)/documents/shared/$(l); }
+    function memberDoc(l, u) { return /databases/$(database)/documents/shared/$(l)/members/$(u); }
+
+    function isMember(l) { return signedIn() && exists(memberDoc(l, request.auth.uid)); }
+    function isMemberAfter(l) { return signedIn() && existsAfter(memberDoc(l, request.auth.uid)); }
+    function isOwnerBefore(l) { return signedIn() && exists(sharedDoc(l)) && get(sharedDoc(l)).data.ownerUid == request.auth.uid; }
+    function isOwnerAfter(l) { return signedIn() && existsAfter(sharedDoc(l)) && getAfter(sharedDoc(l)).data.ownerUid == request.auth.uid; }
+
+    // Campos comunes de un registro (lista, producto o puntero). `shared` admite `by` y no admite `link`.
+    function validRecord(shared) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(shared
+          ? ['type', 'listId', 'name', 'quantity', 'note', 'done', 'by', 'createdAt', 'clientUpdatedAt', 'deletedAt', 'serverUpdatedAt']
+          : ['type', 'listId', 'name', 'quantity', 'note', 'done', 'createdAt', 'clientUpdatedAt', 'deletedAt', 'serverUpdatedAt'])
+        && d.type in (shared ? ['list', 'item'] : ['list', 'item', 'link'])
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 100
+        && d.createdAt is int && d.clientUpdatedAt is int
+        && d.clientUpdatedAt <= request.time.toMillis() + 60000
+        && d.serverUpdatedAt is timestamp   // `== request.time` fue rechazado por Firestore real (2026-10-28)
+        && (d.type == 'list'
+            || (d.type == 'link' && d.listId is string)
+            || (d.type == 'item'
+                && d.listId is string
+                && d.quantity is int && d.quantity >= 1
+                && d.note is string && d.note.size() <= 120
+                && d.done is bool
+                && (!('by' in d) || (d.by is string && d.by.size() <= 24))));
+    }
+
+    function newerOrDeleting() {
+      return request.resource.data.clientUpdatedAt > resource.data.clientUpdatedAt
+          || request.resource.data.get('deletedAt', null) != null;
+    }
+
+    // ---------- Espacio privado (spec 002) ----------
+
     match /users/{uid}/records/{id} {
 
       function owner() {
-        return request.auth != null && request.auth.uid == uid;
-      }
-
-      function valid() {
-        let d = request.resource.data;
-        return d.keys().hasOnly(['type', 'listId', 'name', 'quantity', 'note', 'done',
-                                 'createdAt', 'clientUpdatedAt', 'deletedAt', 'serverUpdatedAt'])
-          && d.type in ['list', 'item']
-          && d.name is string && d.name.size() >= 1 && d.name.size() <= 100
-          && d.createdAt is int && d.clientUpdatedAt is int
-          && d.clientUpdatedAt <= request.time.toMillis() + 60000
-          && d.serverUpdatedAt is timestamp   // `== request.time` fue rechazado por Firestore real (2026-10-28)
-          && (d.type == 'list'
-              || (d.listId is string
-                  && d.quantity is int && d.quantity >= 1
-                  && d.note is string && d.note.size() <= 120
-                  && d.done is bool));
+        return signedIn() && request.auth.uid == uid;
       }
 
       allow read: if owner();
 
-      allow create: if owner() && valid();
+      allow create: if owner() && validRecord(false);
 
-      allow update: if owner() && valid()
-        && resource.data.get('deletedAt', null) == null
-        && (request.resource.data.clientUpdatedAt > resource.data.clientUpdatedAt
-            || request.resource.data.get('deletedAt', null) != null);
+      allow update: if owner() && validRecord(false)
+        && request.resource.data.type == resource.data.type
+        && (
+          (resource.data.get('deletedAt', null) == null && newerOrDeleting())
+          // El puntero de una lista compartida se puede reactivar al volver a unirse.
+          || (resource.data.type == 'link' && request.resource.data.get('deletedAt', null) == null
+              && request.resource.data.clientUpdatedAt > resource.data.clientUpdatedAt)
+        );
 
       // Solo se usa al eliminar la cuenta.
       allow delete: if owner();
+    }
+
+    // ---------- Códigos de lista (spec 005) ----------
+
+    match /codes/{code} {
+      // Solo `get` (hay que conocer el código): sin `list` no se pueden enumerar.
+      allow get: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['listId', 'name', 'ownerAlias'])
+        && request.resource.data.listId is string
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100
+        && request.resource.data.ownerAlias is string && request.resource.data.ownerAlias.size() <= 24
+        && isOwnerAfter(request.resource.data.listId)
+        // Si la cabecera ya existía, el propietario debe ser quien escribe (no solo «quedar» como tal).
+        && (!exists(sharedDoc(request.resource.data.listId)) || isOwnerBefore(request.resource.data.listId));
+
+      allow delete: if isOwnerBefore(resource.data.listId);
+    }
+
+    // ---------- Listas compartidas (spec 005) ----------
+
+    match /shared/{l} {
+
+      function validHead() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['ownerUid', 'code', 'createdAt'])
+          && d.ownerUid is string
+          && d.code is string && d.code.size() == 6
+          && d.createdAt is int;
+      }
+
+      allow read: if isMember(l);
+
+      allow create: if signedIn() && validHead() && request.resource.data.ownerUid == request.auth.uid;
+
+      // Solo el propietario: regenerar el código o ceder la propiedad a un miembro.
+      allow update: if signedIn() && validHead()
+        && resource.data.ownerUid == request.auth.uid
+        && (request.resource.data.ownerUid == request.auth.uid
+            || existsAfter(memberDoc(l, request.resource.data.ownerUid)));
+
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /members/{u} {
+        // Cada uno puede leer su propio documento (así sabe si le han quitado); los miembros ven a todos.
+        allow get: if signedIn() && (request.auth.uid == u || isMember(l));
+        allow list: if isMember(l);
+
+        // Unirse: el documento es el mío y lleva el código vigente; el propietario también se da de alta al crear la lista.
+        allow create: if signedIn() && request.auth.uid == u
+          && request.resource.data.keys().hasOnly(['alias', 'joinedAt', 'code'])
+          && request.resource.data.alias is string
+          && request.resource.data.alias.size() >= 1 && request.resource.data.alias.size() <= 24
+          && request.resource.data.joinedAt is int
+          && existsAfter(sharedDoc(l))
+          && (request.resource.data.code == getAfter(sharedDoc(l)).data.code
+              || getAfter(sharedDoc(l)).data.ownerUid == request.auth.uid);
+
+        // Salir (yo) o ser quitado (el propietario).
+        allow delete: if signedIn() && (request.auth.uid == u || isOwnerBefore(l));
+      }
+
+      match /records/{id} {
+        allow read: if isMember(l);
+
+        // Los productos los escribe cualquier miembro; la lista (type 'list'), solo el propietario.
+        allow create: if isMemberAfter(l) && validRecord(true)
+          && (request.resource.data.type == 'item' || isOwnerAfter(l));
+
+        allow update: if isMemberAfter(l) && validRecord(true)
+          && request.resource.data.type == resource.data.type
+          && (request.resource.data.type == 'item' || isOwnerAfter(l))
+          && resource.data.get('deletedAt', null) == null
+          && newerOrDeleting();
+
+        // Solo al limpiar tras eliminar la cuenta.
+        allow delete: if isOwnerBefore(l);
+      }
     }
 
     // Todo lo demás, denegado.

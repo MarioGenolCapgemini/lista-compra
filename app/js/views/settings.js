@@ -3,7 +3,7 @@
 import { escapeHtml, icon } from '../util.js';
 import { ACCOUNT_HASH } from '../router.js';
 import { t, LANGUAGES } from '../i18n/index.js';
-import { THEMES } from '../settings.js';
+import { THEMES, MAX_ALIAS } from '../settings.js';
 
 // Cambiar de idioma repinta la pantalla entera (la monta de nuevo); así se devuelve el foco
 // al grupo de idioma en lugar de perderlo.
@@ -36,6 +36,12 @@ export function mountSettings(root, { settings, sync = null }) {
     radioGroup('theme', t('settings.theme'), themes, settings.getTheme()) +
     radioGroup('lang', t('settings.language'), langs, settings.getLang()) +
     (sync
+      ? '<fieldset class="setting">' +
+        `<legend class="setting-title">${escapeHtml(t('settings.alias'))}</legend>` +
+        `<input class="input" name="alias" maxlength="${MAX_ALIAS}" autocomplete="off" placeholder="${escapeHtml(t('settings.aliasPlaceholder'))}" aria-label="${escapeHtml(t('settings.alias'))}" value="${escapeHtml(settings.getAlias())}">` +
+        `<p class="hint">${escapeHtml(t('settings.aliasHint'))}</p></fieldset>`
+      : '') +
+    (sync
       ? `<a class="row-link" href="${ACCOUNT_HASH}"><strong>${escapeHtml(t('settings.account'))}</strong>` +
         `<span>${escapeHtml(t('settings.accountHint'))}</span></a>`
       : '') +
@@ -45,6 +51,7 @@ export function mountSettings(root, { settings, sync = null }) {
 
   root.addEventListener('change', (e) => {
     const input = e.target;
+    if (input.matches('input[name="alias"]')) { input.value = settings.setAlias(input.value); return; } // spec 005
     if (!input.matches('input[type="radio"]')) return;
     if (input.name === 'theme') settings.setTheme(input.value);        // AC12.2: al instante
     else if (input.name === 'lang') { refocusLang = true; settings.setLang(input.value); } // AC14.1

@@ -2,11 +2,38 @@
 // Aplica las MISMAS reglas que `firebase/firestore.rules` para poder probar el
 // motor de sincronización sin red. Las reglas reales se comprueban además en el
 // simulador de la consola (firebase/rules-tests.md).
+//
+// Documentos (ruta relativa):
+//   users/{uid}/records/{id}         espacio privado (listas, productos y punteros `link`)
+//   shared/{l}                       cabecera de una lista compartida: ownerUid, code, createdAt
+//   shared/{l}/members/{uid}         miembros: alias, joinedAt, code
+//   shared/{l}/records/{id}          lista y productos compartidos
+//   codes/{CODE}                     vista previa de un código: listId, name, ownerAlias
 
 import { encodeValue, decodeValue } from '../js/sync/firestore.js';
 
-const ALLOWED = ['type', 'listId', 'name', 'quantity', 'note', 'done',
+const ALLOWED = ['type', 'listId', 'name', 'quantity', 'note', 'done', 'by',
   'createdAt', 'clientUpdatedAt', 'deletedAt', 'serverUpdatedAt'];
+
+const RE = {
+  urec: /^users\/([^/]+)\/records\/([^/]+)$/,
+  meta: /^shared\/([^/]+)$/,
+  member: /^shared\/([^/]+)\/members\/([^/]+)$/,
+  srec: /^shared\/([^/]+)\/records\/([^/]+)$/,
+  code: /^codes\/([^/]+)$/,
+};
+
+function classify(rel) {
+  let m;
+  if ((m = RE.urec.exec(rel))) return { kind: 'urec', uid: m[1], id: m[2] };
+  if ((m = RE.srec.exec(rel))) return { kind: 'srec', l: m[1], id: m[2] };
+  if ((m = RE.member.exec(rel))) return { kind: 'member', l: m[1], u: m[2] };
+  if ((m = RE.meta.exec(rel))) return { kind: 'meta', l: m[1] };
+  if ((m = RE.code.exec(rel))) return { kind: 'code', c: m[1] };
+  return null;
+}
+
+const hasOnly = (f, keys) => Object.keys(f).every((k) => keys.includes(k));
 
 export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-KEY', startTime = Date.UTC(2026, 9, 28, 10, 0, 0) } = {}) {
   let clock = startTime;
@@ -18,11 +45,12 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
   const uids = new Set();
   const tokens = new Map();        // idToken -> { uid, exp }
   const refreshTokens = new Map(); // refreshToken -> uid
-  const docs = new Map();          // `${uid}/${id}` -> campos decodificados
+  const docs = new Map();          // ruta relativa -> campos decodificados
   const log = [];                  // peticiones recibidas
 
   const tick = () => (clock += 1);
   const iso = (ms) => new Date(ms).toISOString();
+  const DOCS = `projects/${projectId}/databases/(default)/documents`;
 
   const res = (status, json) => ({
     ok: status >= 200 && status < 300,
@@ -30,6 +58,7 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
     json: async () => json,
   });
   const err = (status, message, extra = {}) => res(status, { error: { code: status, message, ...extra } });
+  const denied = () => err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
 
   function newSession(email, uid) {
     seq++;
@@ -41,41 +70,135 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
   }
 
   // ---- Reglas de seguridad (réplica de firestore.rules) ----
-  function rulesAllowWrite(authUid, pathUid, existing, f, hasTransform) {
-    if (authUid !== pathUid) return false;                                   // owner()
-    const keys = Object.keys(f);
-    if (!keys.every((k) => ALLOWED.includes(k))) return false;               // hasOnly
-    if (!['list', 'item'].includes(f.type)) return false;
+  // `before` = estado actual; `after` = estado tras aplicar TODA la petición (getAfter / existsAfter).
+  function recordValid(f, hasTransform, { shared, existing }) {
+    const allowed = shared ? ALLOWED : ALLOWED.filter((k) => k !== 'by');
+    if (!hasOnly(f, allowed)) return false;                                   // hasOnly
+    if (!['list', 'item', ...(shared ? [] : ['link'])].includes(f.type)) return false;
     if (typeof f.name !== 'string' || f.name.length < 1 || f.name.length > 100) return false;
     if (!Number.isInteger(f.createdAt) || !Number.isInteger(f.clientUpdatedAt)) return false;
-    if (f.clientUpdatedAt > clock + 60000) return false;                     // reloj acotado
-    if (!hasTransform) return false;                                         // serverUpdatedAt == request.time
+    if (f.clientUpdatedAt > clock + 60000) return false;                      // reloj acotado
+    if (!hasTransform) return false;                                          // serverUpdatedAt == request.time
     if (f.type === 'item') {
       if (typeof f.listId !== 'string') return false;
       if (!Number.isInteger(f.quantity) || f.quantity < 1) return false;
       if (typeof f.note !== 'string' || f.note.length > 120) return false;
       if (typeof f.done !== 'boolean') return false;
+      if ('by' in f && (typeof f.by !== 'string' || f.by.length > 24)) return false;
     }
-    if (!existing) return true;                                              // create
-    if (existing.deletedAt != null) return false;                            // un borrado es definitivo
+    if (f.type === 'link' && typeof f.listId !== 'string') return false;
+    if (!existing) return true;                                               // create
+    if (existing.deletedAt != null) {                                         // un borrado es definitivo...
+      return f.type === 'link' && existing.type === 'link' && f.deletedAt == null
+        && f.clientUpdatedAt > existing.clientUpdatedAt;                      // ...salvo el puntero: se puede volver a unir
+    }
     return f.clientUpdatedAt > existing.clientUpdatedAt || f.deletedAt != null;
   }
 
-  const parseDocName = (name) => {
-    const m = /\/users\/([^/]+)\/records\/([^/]+)$/.exec(name);
-    return m ? { uid: m[1], id: m[2] } : null;
-  };
+  function allowWrite(uid, c, op, f, hasTransform, before, after) {
+    const metaOwner = (src, l) => (src.get(`shared/${l}`) || {}).ownerUid;
+    const isMemberAfter = (l) => after.has(`shared/${l}/members/${uid}`);
+    switch (c.kind) {
+      case 'urec': {
+        if (c.uid !== uid) return false;                                      // owner()
+        if (op === 'delete') return true;
+        return recordValid(f, hasTransform, { shared: false, existing: before.get(`users/${c.uid}/records/${c.id}`) });
+      }
+      case 'code': {
+        if (op === 'delete') return metaOwner(before, (before.get(`codes/${c.c}`) || {}).listId) === uid;
+        if (!hasOnly(f, ['listId', 'name', 'ownerAlias'])) return false;
+        if (typeof f.listId !== 'string' || typeof f.name !== 'string' || f.name.length > 100) return false;
+        if (typeof f.ownerAlias !== 'string' || f.ownerAlias.length > 24) return false;
+        const beforeOwner = metaOwner(before, f.listId);
+        return metaOwner(after, f.listId) === uid && (beforeOwner === undefined || beforeOwner === uid);
+      }
+      case 'meta': {
+        const prev = before.get(`shared/${c.l}`);
+        if (op === 'delete') return !!prev && prev.ownerUid === uid;
+        if (!hasOnly(f, ['ownerUid', 'code', 'createdAt'])) return false;
+        if (typeof f.code !== 'string' || f.code.length !== 6) return false;
+        if (!Number.isInteger(f.createdAt)) return false;
+        if (op === 'create') return f.ownerUid === uid;
+        if (!prev || prev.ownerUid !== uid) return false;                     // solo el propietario
+        return f.ownerUid === uid || after.has(`shared/${c.l}/members/${f.ownerUid}`); // transferir a un miembro
+      }
+      case 'member': {
+        if (op === 'delete') {
+          return c.u === uid || metaOwner(before, c.l) === uid;               // salir o ser quitado
+        }
+        if (c.u !== uid) return false;
+        if (!hasOnly(f, ['alias', 'joinedAt', 'code'])) return false;
+        if (typeof f.alias !== 'string' || f.alias.length < 1 || f.alias.length > 24) return false;
+        const meta = after.get(`shared/${c.l}`);
+        return !!meta && (f.code === meta.code || meta.ownerUid === uid);     // prueba del código, o propietario
+      }
+      case 'srec': {
+        if (op === 'delete') return metaOwner(before, c.l) === uid;
+        if (!isMemberAfter(c.l)) return false;
+        if (!recordValid(f, hasTransform, { shared: true, existing: before.get(`shared/${c.l}/records/${c.id}`) })) return false;
+        return f.type === 'item' || metaOwner(after, c.l) === uid;            // solo el propietario toca la lista
+      }
+      default: return false;
+    }
+  }
 
-  const encodeDoc = (uid, id, f) => ({
-    name: `projects/${projectId}/databases/(default)/documents/users/${uid}/records/${id}`,
+  function allowRead(uid, c, op) {
+    const isMember = (l) => docs.has(`shared/${l}/members/${uid}`);
+    switch (c.kind) {
+      case 'urec': return c.uid === uid;
+      case 'code': return op === 'get';                                       // sin `list`: no se enumeran
+      case 'meta': return isMember(c.l);
+      case 'member': return c.u === uid || isMember(c.l);
+      case 'srec': return isMember(c.l);
+      default: return false;
+    }
+  }
+
+  const encodeDoc = (rel, f) => ({
+    name: `${DOCS}/${rel}`,
     fields: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, k === 'serverUpdatedAt' ? { timestampValue: v } : encodeValue(v)])),
   });
+
+  const relOf = (name) => (name.includes('/documents/') ? name.split('/documents/')[1] : null);
 
   function authOf(init) {
     const h = (init.headers || {}).Authorization || '';
     const t = tokens.get(h.replace('Bearer ', ''));
     if (!t || t.exp < clock) return null;
     return t.uid;
+  }
+
+  /** Aplica una lista de escrituras de forma atómica. Devuelve `null` si todo bien o una respuesta de error. */
+  function applyCommit(uid, writes) {
+    const after = new Map(docs);
+    const plan = [];
+    for (const w of writes) {
+      if (w.delete) {
+        const rel = relOf(w.delete);
+        plan.push({ rel, op: 'delete' });
+        after.delete(rel);
+        continue;
+      }
+      const rel = relOf(w.update.name);
+      const incoming = Object.fromEntries(Object.entries(w.update.fields).map(([k, v]) => [k, decodeValue(v)]));
+      const existing = after.get(rel);
+      const cond = w.currentDocument;
+      if (cond && cond.exists === false && existing) return err(409, 'Document already exists', { status: 'ALREADY_EXISTS' });
+      if (cond && cond.exists === true && !existing) return err(404, 'No document to update', { status: 'NOT_FOUND' });
+      const hasTransform = (w.updateTransforms || []).some((t) => t.fieldPath === 'serverUpdatedAt' && t.setToServerValue === 'REQUEST_TIME');
+      const masked = w.updateMask && existing ? { ...existing, ...incoming } : incoming;
+      plan.push({ rel, op: docs.has(rel) ? 'update' : 'create', f: masked, hasTransform });
+      after.set(rel, masked);
+    }
+    for (const p of plan) {
+      const c = classify(p.rel);
+      if (!c || !allowWrite(uid, c, p.op, p.f, p.hasTransform, docs, after)) return denied();
+    }
+    for (const p of plan) {
+      if (p.op === 'delete') docs.delete(p.rel);
+      else docs.set(p.rel, p.hasTransform ? { ...p.f, serverUpdatedAt: iso(tick()) } : p.f);
+    }
+    return null;
   }
 
   async function fetchFn(url, init = {}) {
@@ -134,80 +257,63 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
       const uid = authOf(init);
       if (!uid) return err(401, 'Request had invalid authentication credentials', { status: 'UNAUTHENTICATED' });
       const path = decodeURIComponent(u.pathname);
+      const method = init.method || 'GET';
 
+      // Atómico, como el real: si las reglas rechazan una escritura, se rechaza toda la petición (403).
       if (path.endsWith('/documents:commit')) {
-        // Atómico, como el real: si las reglas rechazan una escritura, se rechaza toda la petición (403).
-        const staged = [];
-        for (const w of body.writes || []) {
-          if (w.delete) {
-            const d = parseDocName(w.delete);
-            if (!d || d.uid !== uid) return err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
-            staged.push({ del: `${d.uid}/${d.id}` });
-            continue;
-          }
-          const d = parseDocName(w.update.name);
-          const f = Object.fromEntries(Object.entries(w.update.fields).map(([k, v]) => [k, decodeValue(v)]));
-          const hasTransform = (w.updateTransforms || []).some((t) => t.fieldPath === 'serverUpdatedAt' && t.setToServerValue === 'REQUEST_TIME');
-          const existing = d ? docs.get(`${d.uid}/${d.id}`) : null;
-          if (!d || !rulesAllowWrite(uid, d.uid, existing, f, hasTransform)) {
-            return err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
-          }
-          staged.push({ key: `${d.uid}/${d.id}`, f });
-        }
-        for (const s of staged) {
-          if (s.del) docs.delete(s.del); else docs.set(s.key, { ...s.f, serverUpdatedAt: iso(tick()) });
-        }
-        return res(200, { writeResults: staged.map(() => ({})), commitTime: iso(clock) });
+        const bad = applyCommit(uid, body.writes || []);
+        return bad || res(200, { writeResults: (body.writes || []).map(() => ({})), commitTime: iso(clock) });
       }
 
+      // `batchWrite` (no atómico): cada escritura se evalúa por separado.
       if (path.endsWith('/documents:batchWrite')) {
         const status = [];
-        for (const w of body.writes || []) {
-          if (w.delete) {
-            const d = parseDocName(w.delete);
-            if (d && d.uid === uid) { docs.delete(`${d.uid}/${d.id}`); status.push({}); } else status.push({ code: 7, message: 'PERMISSION_DENIED' });
-            continue;
-          }
-          const d = parseDocName(w.update.name);
-          const f = Object.fromEntries(Object.entries(w.update.fields).map(([k, v]) => [k, decodeValue(v)]));
-          const hasTransform = (w.updateTransforms || []).some((t) => t.fieldPath === 'serverUpdatedAt' && t.setToServerValue === 'REQUEST_TIME');
-          const existing = d ? docs.get(`${d.uid}/${d.id}`) : null;
-          if (d && rulesAllowWrite(uid, d.uid, existing, f, hasTransform)) {
-            docs.set(`${d.uid}/${d.id}`, { ...f, serverUpdatedAt: iso(tick()) });
-            status.push({});
-          } else {
-            status.push({ code: 7, message: 'PERMISSION_DENIED' });
-          }
-        }
+        for (const w of body.writes || []) status.push(applyCommit(uid, [w]) ? { code: 7, message: 'PERMISSION_DENIED' } : {});
         return res(200, { writeResults: status.map(() => ({})), status });
       }
 
-      const q = /\/documents\/users\/([^/:]+):runQuery$/.exec(path);
+      const q = /\/documents\/(.+):runQuery$/.exec(path);
       if (q) {
-        if (q[1] !== uid) return err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
+        const parent = q[1]; // users/{uid} o shared/{l}
+        const m = /^(users|shared)\/([^/]+)$/.exec(parent);
+        if (!m) return err(404, 'ruta desconocida');
+        const sample = m[1] === 'users' ? { kind: 'urec', uid: m[2] } : { kind: 'srec', l: m[2] };
+        if (!allowRead(uid, sample, 'list')) return denied();
         const sq = body.structuredQuery;
         const flt = sq.where && sq.where.fieldFilter;
-        let rows = [...docs.entries()].filter(([k]) => k.startsWith(uid + '/')).map(([k, f]) => ({ id: k.split('/')[1], f }));
+        const prefix = `${parent}/records/`;
+        let rows = [...docs.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, f]) => ({ rel: k, id: k.slice(prefix.length), f }));
         if (flt) {
           const v = Date.parse(flt.value.timestampValue);
           rows = rows.filter((r) => (flt.op === 'GREATER_THAN' ? Date.parse(r.f.serverUpdatedAt) > v : Date.parse(r.f.serverUpdatedAt) >= v));
         }
         rows.sort((a, b) => Date.parse(a.f.serverUpdatedAt) - Date.parse(b.f.serverUpdatedAt) || a.id.localeCompare(b.id));
         rows = rows.slice(0, sq.limit || 1000);
-        const out = rows.map((r) => ({ document: encodeDoc(uid, r.id, r.f), readTime: iso(clock) }));
+        const out = rows.map((r) => ({ document: encodeDoc(r.rel, r.f), readTime: iso(clock) }));
         return res(200, out.length ? out : [{ readTime: iso(clock) }]);
       }
 
-      const g = /\/documents\/users\/([^/]+)\/records\/([^/]+)$/.exec(path);
-      if (g && (init.method || 'GET') === 'GET') {
-        if (g[1] !== uid) return err(403, 'Missing or insufficient permissions.', { status: 'PERMISSION_DENIED' });
-        const f = docs.get(`${g[1]}/${g[2]}`);
-        return f ? res(200, encodeDoc(g[1], g[2], f)) : err(404, 'Not found', { status: 'NOT_FOUND' });
+      const rel = relOf(path);
+      if (rel && method === 'GET') {
+        // Listado de una colección de miembros: GET shared/{l}/members
+        const lm = /^shared\/([^/]+)\/members$/.exec(rel);
+        if (lm) {
+          if (!allowRead(uid, { kind: 'srec', l: lm[1] }, 'list')) return denied();
+          const prefix = `shared/${lm[1]}/members/`;
+          const documents = [...docs.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, f]) => encodeDoc(k, f));
+          return res(200, documents.length ? { documents } : {});
+        }
+        const c = classify(rel);
+        if (!c || !allowRead(uid, c, 'get')) return denied();
+        const f = docs.get(rel);
+        return f ? res(200, encodeDoc(rel, f)) : err(404, 'Not found', { status: 'NOT_FOUND' });
       }
       return err(404, 'ruta desconocida');
     }
     return err(404, 'host desconocido');
   }
+
+  const userPrefix = (uid) => `users/${uid}/records/`;
 
   return {
     fetch: fetchFn,
@@ -220,8 +326,14 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
     failFirestoreAt: (n = 1, status = 500) => { failFirestore = { countdown: n, status }; },
     failNextFirestore: (status = 500) => { failFirestore = { countdown: 1, status }; },
     log,
-    countDocs: (uid) => [...docs.keys()].filter((k) => !uid || k.startsWith(uid + '/')).length,
-    docsOf: (uid) => [...docs.entries()].filter(([k]) => k.startsWith(uid + '/')).map(([k, f]) => ({ id: k.split('/')[1], ...f })),
+    countDocs: (uid) => [...docs.keys()].filter((k) => !uid || k.startsWith(userPrefix(uid))).length,
+    docsOf: (uid) => [...docs.entries()].filter(([k]) => k.startsWith(userPrefix(uid))).map(([k, f]) => ({ id: k.slice(userPrefix(uid).length), ...f })),
+    // Listas compartidas (spec 005)
+    sharedMeta: (l) => docs.get(`shared/${l}`) || null,
+    sharedRecords: (l) => [...docs.entries()].filter(([k]) => k.startsWith(`shared/${l}/records/`)).map(([k, f]) => ({ id: k.split('/').pop(), ...f })),
+    members: (l) => [...docs.entries()].filter(([k]) => k.startsWith(`shared/${l}/members/`)).map(([k, f]) => ({ uid: k.split('/').pop(), ...f })),
+    codeDoc: (c) => docs.get(`codes/${c}`) || null,
+    codeCount: () => [...docs.keys()].filter((k) => k.startsWith('codes/')).length,
     userCount: () => users.size,
     hasUser: (email) => users.has(String(email).toLowerCase()),
     uidOf: (email) => (users.get(String(email).toLowerCase()) || {}).uid,
@@ -234,7 +346,7 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
         body: JSON.stringify({
           writes: [{
             update: {
-              name: `projects/${projectId}/databases/(default)/documents/users/${uid}/records/${id}`,
+              name: `${DOCS}/users/${uid}/records/${id}`,
               fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, encodeValue(v)])),
             },
             updateTransforms: transform ? [{ fieldPath: 'serverUpdatedAt', setToServerValue: 'REQUEST_TIME' }] : [],
@@ -242,5 +354,9 @@ export function createFakeFirebase({ projectId = 'demo-proyecto', apiKey = 'API-
         }),
       },
     ).then((r) => r.json()),
+    // Petición cruda a un documento (para pruebas de seguridad): devuelve el código HTTP.
+    rawGet: (idToken, rel) => fetchFn(`https://firestore.googleapis.com/v1/${DOCS}/${rel}`, {
+      method: 'GET', headers: { Authorization: 'Bearer ' + idToken },
+    }).then((r) => r.status),
   };
 }

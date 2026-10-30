@@ -39,3 +39,26 @@ El simulador no puede expresar `serverUpdatedAt == request.time`, así que las e
 ## Opcional: pruebas con el emulador
 
 Si instalas la CLI de Firebase y `@firebase/rules-unit-testing`, puedes automatizar los casos 8–12 con el Emulator Suite, que sí permite fijar `request.time`. No es necesario para cerrar la tarea.
+
+## C. Listas compartidas (spec 005, tarea T417)
+
+Hay que probarlas con la app real y **dos cuentas** (A y B) en dos móviles o navegadores, más una tercera cuenta (C) que no se une. Antes, **publica el `firestore.rules` nuevo** en la consola (Firestore → Reglas). Las reglas usan `getAfter`/`existsAfter` en las escrituras que crean varios documentos a la vez (compartir una lista, unirse); el simulador de la consola no las prueba bien, por eso se comprueban con la app.
+
+| # | Qué hacer | Resultado esperado |
+|---|---|---|
+| 13 | A comparte una lista (icono de compartir → «Compartir esta lista») | Aparecen `shared/{id}`, `shared/{id}/members/{uidA}`, `shared/{id}/records/…` y `codes/{CODE}`; en `users/{uidA}/records` hay un `link-{id}` |
+| 14 | B pulsa «Unirse» y escribe el código | B ve la lista y sus productos; aparece `shared/{id}/members/{uidB}` |
+| 15 | B escribe un código inexistente | «Código no válido»; no se crea ningún documento |
+| 16 | C (sin unirse) intenta abrir la lista | No la ve; en el simulador, `get` de `/shared/{id}` y de `/shared/{id}/records/x` como C → **Denegado** |
+| 17 | En el simulador: `list` de `/codes` como cualquier usuario | **Denegado** (solo se permite `get` por código) |
+| 18 | En el simulador: `get` de `/codes/{CODE}` como cualquier usuario autenticado | **Permitido** |
+| 19 | B edita un producto y A lo ve (y al revés) | Se sincroniza en ~10 s; el producto muestra «por <alias>» |
+| 20 | B intenta renombrar la lista (con un cliente modificado o desde el simulador, escribiendo el registro `type: list`) | **Denegado**; solo el propietario puede |
+| 21 | A regenera el código | El código viejo ya no existe en `codes`; B sigue dentro; C con el código viejo → «Código no válido» |
+| 22 | A quita a B | B ve el aviso «Ya no tienes acceso»; B no puede leer ya `shared/{id}/records` |
+| 23 | B vuelve a unirse con el código vigente | Funciona (el puntero `link` se reactiva) |
+| 24 | A cede la propiedad a B y A sale | `shared/{id}.ownerUid` es B; solo B puede regenerar el código |
+| 25 | El propietario elimina la lista | Los miembros dejan de verla; `codes/{CODE}` ya no existe |
+| 26 | Un miembro elimina su cuenta | Su documento en `members` desaparece y la lista sigue para los demás |
+
+Si el 13 falla con «permiso denegado», lo más probable es que las reglas no estén publicadas o que `getAfter` no se evalúe como se espera; en ese caso, revisa `validRecord`, `isOwnerAfter` e `isMemberAfter` en `firestore.rules` y avisa antes de abrir la función a otras personas.

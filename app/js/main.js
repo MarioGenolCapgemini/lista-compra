@@ -7,6 +7,7 @@ import { createRouter } from './router.js';
 import { createAuth } from './sync/auth.js';
 import { createFirestore } from './sync/firestore.js';
 import { createEngine } from './sync/engine.js';
+import { createSharing } from './sync/sharing.js';
 import { FIREBASE_API_KEY, FIREBASE_PROJECT_ID } from './config.js';
 import { mountHome } from './views/home.js';
 import { mountList } from './views/list.js';
@@ -40,13 +41,22 @@ async function start() {
 
   // Sincronización opcional: sin configuración la app es idéntica a la spec 001 (FR-023).
   let sync = null;
+  let sharing = null;
   if (FIREBASE_API_KEY && FIREBASE_PROJECT_ID && store.isPersistent()) {
+    const firestore = createFirestore({ projectId: FIREBASE_PROJECT_ID });
     sync = createEngine({
       store, storage,
       auth: createAuth({ apiKey: FIREBASE_API_KEY }),
-      firestore: createFirestore({ projectId: FIREBASE_PROJECT_ID }),
+      firestore,
       onNewAccount: () => seedForNewAccount(store, getLang()), // AC13.9
     });
+    // Listas compartidas con código (spec 005): necesitan cuenta, y comparten un alias, no el correo.
+    sharing = createSharing({
+      store, firestore, session: sync.session, syncNow: sync.syncNow, resetCursor: sync.resetSharedCursor,
+      getAlias: settings.getAlias,
+    });
+    store.setAlias(settings.getAlias());
+    settings.subscribe(() => store.setAlias(settings.getAlias()));
     await sync.init();
     if (sync.getState().signedIn) sync.start();
   }
@@ -95,10 +105,10 @@ async function start() {
     app.classList.remove('view');
     void app.offsetWidth; // reinicia la animación de entrada (AC11.3)
     app.classList.add('view');
-    if (route.name === 'list') unmount = mountList(app, { store, listId: route.id });
+    if (route.name === 'list') unmount = mountList(app, { store, listId: route.id, sync, sharing, settings });
     else if (route.name === 'account') unmount = mountAccount(app, { sync });
     else if (route.name === 'settings') unmount = mountSettings(app, { settings, sync });
-    else unmount = mountHome(app, { store, sync });
+    else unmount = mountHome(app, { store, sync, sharing, settings });
   }
 
   // Al cambiar de idioma se repinta la pantalla actual y el aviso (AC14.1). El tema no necesita repintar.

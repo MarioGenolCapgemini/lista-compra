@@ -1,5 +1,7 @@
 // Cliente mínimo de la API REST de Cloud Firestore (sin SDK).
 // Todos los datos de un usuario viven en `users/{uid}/records/{id}` (ver plan §5).
+// Spec 005: las listas compartidas viven en `shared/{listId}/…` y los códigos en `codes/{CODE}`.
+// Un «espacio» es un uid (string, espacio privado) o `{ shared: listId }` (lista compartida).
 
 import { SyncError } from './errors.js';
 
@@ -41,7 +43,9 @@ export function toFields(type, rec) {
   };
   if (type === 'item') {
     Object.assign(base, { listId: rec.listId, quantity: rec.quantity, note: rec.note ?? '', done: !!rec.done });
+    if (rec.by) base.by = rec.by;
   }
+  if (type === 'link') base.listId = rec.listId;
   return base;
 }
 
@@ -56,7 +60,9 @@ export function fromDoc(doc) {
   };
   if (f.type === 'item') {
     Object.assign(rec, { listId: f.listId, quantity: f.quantity, note: f.note ?? '', done: !!f.done });
+    if (f.by) rec.by = f.by;
   }
+  if (f.type === 'link') rec.listId = f.listId;
   return { type: f.type, rec, serverUpdatedAt: f.serverUpdatedAt || null };
 }
 
@@ -65,6 +71,7 @@ function httpError(status, json) {
   const msg = (json && json.error && json.error.message) || 'Error ' + status;
   if (status === 401 || st === 'UNAUTHENTICATED') return new SyncError('auth', msg);
   if (status === 429 || st === 'RESOURCE_EXHAUSTED') return new SyncError('quota', msg);
+  if (status === 409 || st === 'ALREADY_EXISTS') return new SyncError('exists', msg);
   if (status === 403 || st === 'PERMISSION_DENIED') return new SyncError('permission', msg);
   return new SyncError('server', msg);
 }
@@ -74,7 +81,11 @@ const ts = (s) => Date.parse(s);
 export function createFirestore({ projectId, fetchFn } = {}) {
   const f = fetchFn || ((...a) => globalThis.fetch(...a));
   const root = `projects/${projectId}/databases/(default)/documents`;
-  const docPath = (uid, id) => `${root}/users/${uid}/records/${id}`;
+  const spaceBase = (space) => (typeof space === 'string' ? `users/${space}` : `shared/${space.shared}`);
+  const docPath = (space, id) => `${root}/${spaceBase(space)}/records/${id}`;
+  const fullPath = (rel) => `${root}/${rel}`;
+  const enc = (obj) => encodeFields(obj);
+  const REQUEST_TIME = [{ fieldPath: 'serverUpdatedAt', setToServerValue: 'REQUEST_TIME' }];
 
   async function request(path, token, { method = 'POST', body } = {}) {
     let res;
@@ -99,12 +110,12 @@ export function createFirestore({ projectId, fetchFn } = {}) {
    * Devuelve un resultado por registro: `{id, ok:true}` o `{id, ok:false, kind, message}`.
    * Un registro rechazado por las reglas (p. ej. obsoleto) NO hace fallar al resto.
    */
-  async function pushChunk(uid, token, entries) {
+  async function pushChunk(space, token, entries) {
     // `commit` (no `batchWrite`: este no admite a usuarios finales con reglas de seguridad) es atómico:
     // si una escritura queda rechazada, se rechaza todo el lote. En ese caso se reintenta una a una
     // para saber cuáles perdieron el conflicto sin penalizar a las demás.
     const toWrite = ({ type, rec }) => ({
-      update: { name: docPath(uid, rec.id), fields: encodeFields(toFields(type, rec)) },
+      update: { name: docPath(space, rec.id), fields: encodeFields(toFields(type, rec)) },
       updateTransforms: [{ fieldPath: 'serverUpdatedAt', setToServerValue: 'REQUEST_TIME' }],
     });
     const commit = (list) => request(`${root}:commit`, token, { body: { writes: list.map(toWrite) } });
@@ -137,7 +148,7 @@ export function createFirestore({ projectId, fetchFn } = {}) {
    * Lee los registros cuyo `serverUpdatedAt` es posterior a `cursor` (ISO) o todos si es null.
    * Devuelve `{ records: [{type, rec, serverUpdatedAt}], maxServerUpdatedAt }`.
    */
-  async function pull(uid, token, cursor) {
+  async function pull(space, token, cursor) {
     const out = [];
     const seen = new Set();
     let after = cursor || null;
@@ -157,7 +168,7 @@ export function createFirestore({ projectId, fetchFn } = {}) {
           },
         };
       }
-      const json = await request(`${root}/users/${uid}:runQuery`, token, { body: { structuredQuery: q } });
+      const json = await request(`${root}/${spaceBase(space)}:runQuery`, token, { body: { structuredQuery: q } });
       const docs = (json || []).filter((x) => x.document).map((x) => x.document);
       let fresh = 0;
       let lastTs = after;
@@ -178,8 +189,8 @@ export function createFirestore({ projectId, fetchFn } = {}) {
   }
 
   /** Lee un documento concreto, o null si no existe. */
-  async function getRecord(uid, token, id) {
-    const doc = await request(docPath(uid, id), token, { method: 'GET' });
+  async function getRecord(space, token, id) {
+    const doc = await request(docPath(space, id), token, { method: 'GET' });
     return doc ? fromDoc(doc) : null;
   }
 
@@ -193,5 +204,123 @@ export function createFirestore({ projectId, fetchFn } = {}) {
     return records.length;
   }
 
-  return { pushChunk, pull, getRecord, deleteAll };
+  // ---- Listas compartidas (spec 005) ----
+
+  const plain = (doc) => {
+    if (!doc) return null;
+    const out = { id: doc.name.split('/').pop() };
+    for (const [k, v] of Object.entries(doc.fields || {})) out[k] = decodeValue(v);
+    return out;
+  };
+  const commit = (token, writes) => request(`${root}:commit`, token, { body: { writes } });
+  const create = (rel, obj) => ({ update: { name: fullPath(rel), fields: enc(obj) }, currentDocument: { exists: false } });
+  const del = (rel) => ({ delete: fullPath(rel) });
+  const setFields = (rel, obj) => ({
+    update: { name: fullPath(rel), fields: enc(obj) },
+    updateMask: { fieldPaths: Object.keys(obj) },
+    currentDocument: { exists: true },
+  });
+  const linkId = (listId) => 'link-' + listId;
+  const linkWrite = (uid, link, { deleted = false } = {}) => ({
+    update: {
+      name: docPath(uid, linkId(link.listId)),
+      fields: enc(toFields('link', {
+        id: linkId(link.listId), listId: link.listId, name: link.name, createdAt: link.createdAt,
+        updatedAt: link.updatedAt, deletedAt: deleted ? link.updatedAt : null,
+      })),
+    },
+    updateTransforms: REQUEST_TIME,
+  });
+
+  /** Vista previa de un código: `{ listId, name, ownerAlias }` o null si no existe. */
+  async function getCode(token, code) {
+    return plain(await request(fullPath(`codes/${code}`), token, { method: 'GET' }));
+  }
+
+  /** Cabecera de una lista compartida (solo la leen los miembros): `{ ownerUid, code, createdAt }`. */
+  async function getShared(token, listId) {
+    return plain(await request(fullPath(`shared/${listId}`), token, { method: 'GET' }));
+  }
+
+  async function getMember(token, listId, uid) {
+    return plain(await request(fullPath(`shared/${listId}/members/${uid}`), token, { method: 'GET' }));
+  }
+
+  async function listMembers(token, listId) {
+    const json = await request(fullPath(`shared/${listId}/members`), token, { method: 'GET' });
+    return ((json && json.documents) || []).map(plain);
+  }
+
+  /**
+   * Crea una lista compartida: cabecera, miembro propietario, código, puntero propio y los
+   * registros (lista y productos). La primera `commit` es atómica y lleva todo lo de gobierno;
+   * el resto de productos van en `commit`s siguientes. Lanza `exists` si el código ya está cogido.
+   */
+  async function createShared(uid, token, { listId, code, alias, now, list, items = [] }) {
+    const space = { shared: listId };
+    const rec = (type, r) => ({
+      update: { name: docPath(space, r.id), fields: enc(toFields(type, r)) },
+      updateTransforms: REQUEST_TIME,
+    });
+    const first = [
+      create(`shared/${listId}`, { ownerUid: uid, code, createdAt: now }),
+      create(`shared/${listId}/members/${uid}`, { alias, joinedAt: now, code }),
+      create(`codes/${code}`, { listId, name: list.name, ownerAlias: alias }),
+      linkWrite(uid, { listId, name: list.name, createdAt: now, updatedAt: now }),
+      rec('list', list),
+    ];
+    const room = CHUNK - first.length;
+    await commit(token, [...first, ...items.slice(0, Math.max(room, 0)).map((i) => rec('item', i))]);
+    for (let n = Math.max(room, 0); n < items.length; n += CHUNK) {
+      await commit(token, items.slice(n, n + CHUNK).map((i) => rec('item', i)));
+    }
+  }
+
+  /** Une al usuario a la lista: miembro (con la prueba del código) y puntero propio, atómico. */
+  async function joinShared(uid, token, { listId, code, alias, now, name }) {
+    await commit(token, [
+      create(`shared/${listId}/members/${uid}`, { alias, joinedAt: now, code }),
+      linkWrite(uid, { listId, name, createdAt: now, updatedAt: now }),
+    ]);
+  }
+
+  /** Cambia el código: el nuevo se crea (falla si existe), la cabecera se actualiza y el viejo se borra. */
+  async function regenerateCode(token, { listId, oldCode, newCode, name, ownerAlias }) {
+    await commit(token, [
+      create(`codes/${newCode}`, { listId, name, ownerAlias }),
+      setFields(`shared/${listId}`, { code: newCode }),
+      del(`codes/${oldCode}`),
+    ]);
+  }
+
+  async function removeMember(token, listId, uid) {
+    await commit(token, [del(`shared/${listId}/members/${uid}`)]);
+  }
+
+  /** Salir de la lista: dejo de ser miembro y mi puntero queda con lápida. */
+  async function leaveShared(uid, token, { listId, name, now }) {
+    await commit(token, [
+      del(`shared/${listId}/members/${uid}`),
+      linkWrite(uid, { listId, name, createdAt: now, updatedAt: now }, { deleted: true }),
+    ]);
+  }
+
+  /** Pone lápida a mi puntero (me quitaron o la lista se borró). */
+  async function tombstoneLink(uid, token, { listId, name, now }) {
+    await commit(token, [linkWrite(uid, { listId, name, createdAt: now, updatedAt: now }, { deleted: true })]);
+  }
+
+  async function transferOwner(token, { listId, newOwnerUid }) {
+    await commit(token, [setFields(`shared/${listId}`, { ownerUid: newOwnerUid })]);
+  }
+
+  async function deleteCode(token, code) {
+    await commit(token, [del(`codes/${code}`)]);
+  }
+
+  return {
+    pushChunk, pull, getRecord, deleteAll,
+    getCode, getShared, getMember, listMembers, createShared, joinShared, regenerateCode,
+    removeMember, leaveShared, tombstoneLink, transferOwner, deleteCode,
+  };
 }

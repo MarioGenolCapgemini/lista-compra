@@ -8,6 +8,8 @@ Sirve `app/` por HTTP (`python -m http.server 8000`) y abre:
 - `/tests/storage.test.html`: persistencia contra IndexedDB real (incluye migración v1→v2 y banderas).
 - `/tests/sync.test.html`: motor de sincronización, Auth y Firestore contra un servidor falso con las mismas reglas.
 - `/tests/ui.test.html`: idiomas, ajustes (tema/idioma) y lista inicial (spec 003).
+- `/tests/sharing.test.html`: listas compartidas con código (spec 005): código, compartir, unirse, miembros, aislamiento; 2–11 clientes contra el servidor falso.
+- `/tests/ui-sharing.test.html`: interfaz de las listas compartidas (cabecera con «Unirse», icono y panel de compartir, aviso de «sin acceso», alias en Ajustes). Necesita navegador.
 
 Todas deben aparecer en verde. Además, **sin navegador**: `node app/tests/contrast.check.mjs` comprueba el contraste WCAG (≥ 4,5:1 texto, ≥ 3:1 componentes) de todos los pares de colores en ambos temas; hay que ejecutarlo cada vez que se toquen las variables de color de `styles.css`.
 

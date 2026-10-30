@@ -495,3 +495,40 @@ body::before {
   .sheet.open, .sheet.dragging { opacity: 1; }
   .sheet-backdrop { transition: none; }
 }
+
+/* ---------- Listas compartidas (spec 005) ---------- */
+
+.badge {
+  display: inline-block; margin-left: 8px; padding: 0 9px; vertical-align: middle;
+  font-size: .75rem; font-weight: 650; border-radius: 999px;
+  background: var(--chip-bg); color: var(--chip-text);
+}
+.item-by { font-size: .8rem; color: var(--muted); }
+.item.done .item-by { color: var(--done); }
+.topbar .btn-small { flex: none; min-height: 40px; padding: 0 14px; }
+.topbar .btn-small .icon { width: 18px; height: 18px; }
+
+.notice--stack { display: grid; gap: 6px; margin-bottom: 14px; }
+.notice-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.dlg--share { width: min(94vw, 460px); }
+.dlg--share .lead { margin: 0 0 10px; font-weight: 650; overflow-wrap: anywhere; }
+.share { display: grid; gap: 12px; }
+.share .hint { margin: 0; }
+.share-code {
+  display: block; text-align: center; padding: 14px 8px;
+  font: 700 2rem/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .18em;
+  border: 1px dashed var(--input-border); border-radius: var(--radius);
+  background: var(--input-bg); color: var(--text);
+  user-select: all;
+}
+.share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-actions .btn { flex: 1 1 140px; }
+.share-sub { margin: 4px 0 0; font-size: 1rem; }
+.members { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.member { display: flex; align-items: center; gap: 4px; min-height: 48px; }
+.member-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.member-name small { color: var(--muted); }
+.share-leave { margin-top: 4px; }
+.share-msg { min-height: 1.4em; margin: 8px 0 0; color: var(--accent-text); font-size: .9rem; }
+body.busy, body.busy * { cursor: progress; }
