@@ -44,7 +44,7 @@ export function mountList(root, { store, listId }) {
     `<button type="button" class="grab" id="add-grab" aria-expanded="false" aria-label="${escapeHtml(t('catalog.open'))}"><span></span></button>` +
     '<ul id="suggest" class="suggest" role="listbox" hidden></ul>' +
     '<div class="addbar-row">' +
-    `<input name="name" class="input" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest" placeholder="${escapeHtml(t('list.add.placeholder'))}" aria-label="${escapeHtml(t('list.add.aria'))}" required maxlength="100" enterkeyhint="done">` +
+    `<input name="product" class="input" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest" placeholder="${escapeHtml(t('list.add.placeholder'))}" aria-label="${escapeHtml(t('list.add.aria'))}" required maxlength="100" enterkeyhint="done">` +
     `<button type="submit" class="btn btn-primary btn-square" aria-label="${escapeHtml(t('list.add.btn'))}">${icon('plus')}</button>` +
     '</div>' +
     '<div class="addbar-row">' +
@@ -63,7 +63,7 @@ export function mountList(root, { store, listId }) {
     grabEl: $('#add-grab'),
     dragZones: [$('#add-grab'), form],
   });
-  const nameInput = form.elements.name;
+  const nameInput = form.elements.product;
   const suggestEl = $('#suggest');
   let sugg = [];
   let active = -1;
@@ -88,8 +88,8 @@ export function mountList(root, { store, listId }) {
     const it = sugg[n]; if (!it) return;
     const f = form.elements;
     addFromCatalog(store, listId, it, getLang(), { quantity: f.quantity.value, note: f.note.value, allowDuplicate: true });
-    f.name.value = ''; f.note.value = ''; f.quantity.value = '1';
-    hideSuggest(); f.name.focus();
+    f.product.value = ''; f.note.value = ''; f.quantity.value = '1';
+    hideSuggest(); f.product.focus();
   }
   nameInput.addEventListener('input', renderSuggest, { signal });
   nameInput.addEventListener('blur', hideSuggest, { signal });
@@ -168,12 +168,12 @@ export function mountList(root, { store, listId }) {
     e.preventDefault();
     hideSuggest();
     const f = form.elements;
-    store.addItem(listId, { name: f.name.value, quantity: f.quantity.value, note: f.note.value });
+    store.addItem(listId, { name: f.product.value, quantity: f.quantity.value, note: f.note.value });
     // Si el nombre solo tenía espacios, el store lo rechaza: se limpia el campo sin ruido.
-    f.name.value = '';
+    f.product.value = '';
     f.note.value = '';
     f.quantity.value = '1';
-    f.name.focus();
+    f.product.focus();
   }, { signal });
 
   const unsubscribe = store.subscribe(render);
