@@ -278,13 +278,14 @@ body::before {
 
 .input {
   flex: 1; min-width: 0; min-height: var(--tap);
-  padding: 0 17px;
-  border: 2px solid var(--input-border); border-radius: 999px;
+  padding: 0 16px;
+  border: 3px solid var(--input-border); border-radius: 999px;
   background: var(--input-bg); color: var(--text);
   font: inherit; /* 16px evita el zoom automático en iOS */
 }
-/* Campo activo: borde de acento (con el anillo de foco de siempre). */
+/* Un solo borde: grueso siempre, y al enfocar solo cambia de color (sin el anillo de foco extra). */
 .input:focus, .field input:focus { border-color: var(--focus); }
+.input:focus-visible, .field input:focus-visible { outline: none; }
 .input::placeholder { color: var(--muted); opacity: 1; }
 .input-qty { flex: 0 0 84px; text-align: center; }
 
@@ -302,8 +303,8 @@ body::before {
 .dlg-msg { margin: 0 0 8px; overflow-wrap: anywhere; }
 .field { display: grid; gap: 4px; margin-bottom: 12px; font-size: .9rem; color: var(--muted); }
 .field input {
-  min-height: var(--tap); padding: 0 13px;
-  border: 2px solid var(--input-border); border-radius: var(--radius-sm);
+  min-height: var(--tap); padding: 0 12px;
+  border: 3px solid var(--input-border); border-radius: var(--radius-sm);
   background: var(--input-bg); color: var(--text);
   font: 1rem system-ui, sans-serif;
 }
